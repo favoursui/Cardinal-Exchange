@@ -4,6 +4,7 @@ import { createPublicClient, createWalletClient, defineChain, encodeFunctionData
 import { buildApp } from '../dist/apps/api/src/app.js';
 import { createQwapReader, QwapQuotes } from '../dist/apps/api/src/adapters/qwap.js';
 import { createExecutionReader, swapAbi } from '../dist/apps/api/src/services/prepare-swap.js';
+import { createStatusReader, TransactionTracker } from '../dist/apps/api/src/services/transaction-status.js';
 import { QWAP } from '../dist/apps/api/src/adapters/qwap-registry.js';
 
 const url = 'http://127.0.0.1:18545';
@@ -41,7 +42,7 @@ try {
       await Promise.all(['token0','token1','factory','getReserves'].map(method => rpc.read(pair, method, [], header.number)));
     }
   }
-  app = await buildApp({ rateLimitMax: 100, quotes: new QwapQuotes(rpc), execution: createExecutionReader(client) });
+  app = await buildApp({ rateLimitMax: 100, quotes: new QwapQuotes(rpc), execution: createExecutionReader(client), tracker: new TransactionTracker(createStatusReader(client)) });
   const post = async (route, payload) => {
     const response = await app.inject({ method: 'POST', url: route, payload });
     assert.equal(response.statusCode, 200, `${route}: ${response.body}`);
@@ -72,16 +73,41 @@ try {
     }
     const beforeIn = await balance(request.tokenIn), beforeOut = await balance(request.tokenOut);
     const tx = prepared.transaction;
-    const mined = await receipt(await wallet.sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value), gas: BigInt(tx.gas) }));
+    const beforeSwap = await client.request({ method: 'evm_snapshot' });
+    const status = async hash => {
+      const response = await app.inject(`/v1/transactions/${hash}`);
+      assert.equal(response.statusCode, 200, response.body); return response.json();
+    };
+    await client.request({ method: 'evm_setAutomine', params: [false] });
+    let hash;
+    try {
+      hash = await wallet.sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value), gas: BigInt(tx.gas) });
+      assert.equal((await status(hash)).status, 'pending');
+      await client.request({ method: 'evm_mine' });
+    } finally { await client.request({ method: 'evm_setAutomine', params: [true] }); }
+    const mined = await receipt(hash);
+    assert.equal((await status(hash)).status, 'confirming');
+    await client.request({ method: 'anvil_mine', params: ['0x2'] });
+    const confirmed = await status(hash);
+    assert.equal(confirmed.status, 'confirmed');
+    assert.equal(confirmed.finalized, false);
     const afterIn = await balance(request.tokenIn), afterOut = await balance(request.tokenOut);
     assert.equal(beforeIn - afterIn, amount);
     assert.ok(afterOut - beforeOut >= BigInt(prepared.minimumAmountOut));
     assert.equal(await client.readContract({ address: request.tokenIn, abi: erc20Abi, functionName: 'allowance', args: [account, QWAP.router] }), 0n);
     const sent = await client.getTransaction({ hash: mined.transactionHash });
     assert.equal(sent.input, tx.data);
+    if (input === 1) {
+      // Remove the observed swap, then create a different canonical block at its height.
+      assert.equal(await client.request({ method: 'evm_revert', params: [beforeSwap] }), true);
+      await client.request({ method: 'evm_mine' });
+      const reorged = await status(hash);
+      assert.equal(reorged.status, 'reorged');
+      assert.equal(reorged.reorgDetected, true);
+    }
     results.push({ route: prepared.path, outputReceived: (afterOut - beforeOut).toString(), gasUsed: mined.gasUsed.toString(), localBlock: mined.blockNumber.toString() });
   }
-  console.log(JSON.stringify({ status: 'passed', scope: 'localhost fork only', forkBlock: metadata.forkedNetwork.forkBlockNumber, checks: ['approval-required response','exact approvals','sender simulation','gas estimation','direct swap','multi-hop swap','minimum-output revert','expired-deadline revert','recipient balance changes','allowance consumed'], swaps: results }, null, 2));
+  console.log(JSON.stringify({ status: 'passed', scope: 'localhost fork only', forkBlock: metadata.forkedNetwork.forkBlockNumber, checks: ['approval-required response','exact approvals','sender simulation','gas estimation','direct swap','multi-hop swap','minimum-output revert','expired-deadline revert','recipient balance changes','allowance consumed','pending status','confirming status','confirmed status','reorg detection'], swaps: results }, null, 2));
 } finally {
   if (app) await app.close();
   const reverted = await client.request({ method: 'evm_revert', params: [snapshot] });

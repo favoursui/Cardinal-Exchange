@@ -14,7 +14,7 @@ Assets: user funds, LP deposits, allowances, transaction intent, quote integrity
 | Sandwiching / price movement | On-chain minimum output, deadline, impact warnings; assess private execution availability | Existing QWAP router enforces minimum output/deadline; own contracts absent; slippage limits cannot eliminate MEV |
 | Reentrancy / token anomalies | Reviewed contracts, safe transfers, exact balance accounting, adversarial-token tests | Contracts not implemented |
 | LP accounting / rounding exploits | Economic specification, fuzzing, invariants, independent review | AMM not selected |
-| Reorgs / RPC inconsistency | Receipt tracking, confirmation policy, rollback/reconciliation | Not implemented |
+| Reorgs / RPC inconsistency | Receipt tracking, confirmation policy, rollback/reconciliation | Canonical inclusion checks and bounded observation history implemented; durable reconciliation pending |
 | Admin compromise | Least privilege, multisig, timelocks, documented pause scope | No admin contracts |
 | Frontend / supply-chain compromise | Lockfile, review, security scans, restricted CI permissions, build provenance, CSP | Lockfile and dependency audit only |
 | Information leakage | No request-body logging, sanitized error responses, header redaction | Implemented baseline; deployment review still required |

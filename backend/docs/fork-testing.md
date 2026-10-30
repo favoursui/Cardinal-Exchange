@@ -52,3 +52,9 @@ The wallet received at least each preparation's minimum output, and allowances r
 ## Remaining limits
 
 No browser wallet UX, public testnet broadcast, transaction replacement tracking, mainnet deployment, contract audit, token source review or production deployment is covered. A fork reproduces a snapshot and local execution, not QMS's live consensus/reorg behavior. Code hashes and local success cannot establish all safety properties of token or pool implementations.
+
+## Transaction-status verification update
+
+The expanded harness passed at source block **237868**, including real pending → confirming → confirmed transitions and `reorged` after removal of a previously observed swap and mining a different canonical block. Two extra blocks satisfied the three-confirmation application policy; the API continued to report `finalized: false`.
+
+The direct local swap received 496539 test USDC base units (113685 gas); the two-hop local swap received 4468203405661 test WETH base units (168895 gas). Snapshot restoration passed. No transactions were sent to public QMS. The original successful-run table above remains historical evidence for the earlier harness.

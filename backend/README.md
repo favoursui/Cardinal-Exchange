@@ -39,3 +39,7 @@ See [transaction preparation](docs/transaction-preparation.md) for the quote-ID 
 ## Real-contract integration tests
 
 `npm run test:fork` runs the approval, preparation, simulation and swap flow on a localhost-only Anvil fork. Start the fork as described in [fork testing](docs/fork-testing.md). These tests never submit transactions to public QMS and restore the local snapshot afterward.
+
+## Transaction tracking
+
+`GET /v1/transactions/<hash>` reports pending, confirming, confirmed, reverted, reorged or not-found status on QMS testnet. Three confirmations are an application threshold, not finality. Replacement detection is not implemented. See [status semantics and limits](docs/transaction-status.md).

@@ -9,7 +9,8 @@ import { QWAP } from './adapters/qwap-registry.js';
 import { QuoteStore } from './services/quote-store.js';
 import { SwapPreparer } from './services/prepare-swap.js';
 import type { ExecutionReader } from './services/prepare-swap.js';
-export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QwapQuotes; execution?: ExecutionReader; now?: () => number } = {}) {
+import type { TransactionTracker } from './services/transaction-status.js';
+export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QwapQuotes; execution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
   if (options.execution && !options.quotes) throw new Error('Transaction preparation requires quotes');
   const store = new QuoteStore(options.now);
   const preparer = options.execution && options.quotes ? new SwapPreparer(store, options.quotes, options.execution, options.now) : undefined;
@@ -70,6 +71,19 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
   }, async (request, reply) => {
     if (!preparer) return reply.code(503).send({ error: 'TRANSACTION_PREPARATION_DISABLED' });
     try { return await preparer.prepare(request.body.quoteId, request.body.wallet); }
+    catch (error) {
+      if (error instanceof QuoteError) return reply.code(error.status).send({ error: error.code });
+      throw error;
+    }
+  });
+  app.get<{ Params: { hash: string } }>('/v1/transactions/:hash', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: { params: { type: 'object', additionalProperties: false, required: ['hash'], properties: {
+      hash: { type: 'string', pattern: '^0x[0-9a-fA-F]{64}$' },
+    } } },
+  }, async (request, reply) => {
+    if (!options.tracker) return reply.code(503).send({ error: 'TRANSACTION_TRACKING_DISABLED' });
+    try { return await options.tracker.status(request.params.hash); }
     catch (error) {
       if (error instanceof QuoteError) return reply.code(error.status).send({ error: error.code });
       throw error;
