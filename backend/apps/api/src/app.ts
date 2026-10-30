@@ -23,6 +23,27 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
   const removal = options.removalExecution ? new RemovalPreparer(options.pools ?? [], options.removalExecution, options.now) : undefined;
   const store = new QuoteStore(options.now);
   const preparer = options.execution && options.quotes ? new SwapPreparer(store, options.quotes, options.execution, options.now) : undefined;
+  // Configuration discovery must not perform RPC calls or imply live liquidity.
+  const quoteVenues = options.quotes ? options.quotes.venueIds ? [...options.quotes.venueIds].sort() : null : [];
+  const poolVenues = [...pools.keys()].sort();
+  const capabilities = {
+    apiVersion: 'v1', chainId: CHAIN_ID, testnet: true,
+    operations: {
+      quotes: { enabled: !!options.quotes, venues: quoteVenues },
+      swapPreparation: { enabled: !!preparer, venues: preparer ? quoteVenues : [] },
+      poolReads: { enabled: pools.size > 0, venues: poolVenues },
+      liquidityAddition: { enabled: !!addition, venues: addition ? poolVenues : [] },
+      liquidityRemoval: { enabled: !!removal, venues: removal ? poolVenues : [] },
+      transactionTracking: { enabled: !!options.tracker },
+    },
+    restrictions: {
+      unsignedTransactionsOnly: true, serverSigning: false, serverBroadcasting: false,
+      nativeTokenOperations: false, poolCreation: false, splitRouting: false,
+      liquidityAdditionRequiresExistingPool: true, liquidityMinimumEnforced: false,
+      quoteRanking: 'output-before-gas', maxSlippageBps: 500,
+    },
+    availability: { basis: 'configuration', readinessPath: '/health/ready', readinessScope: 'read-only-quotes' },
+  };
   const app = Fastify({
     logger: options.logger ? { redact: ['req.headers.authorization', 'req.headers.cookie'] } : false,
     logController: new LogController({ disableRequestLogging: true }),
@@ -40,6 +61,7 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
     void reply.code(status).send({ error: status === 500 ? 'INTERNAL_ERROR' : 'REQUEST_REJECTED' });
   });
   app.get('/health/live', async () => ({ status: 'ok', chainId: CHAIN_ID }));
+  app.get('/v1/capabilities', async () => capabilities);
   app.get('/health/ready', async (_request, reply) => options.quotes?.ready()
     ? { status: 'ok', scope: 'read-only-quotes' }
     : reply.code(503).send({ status: 'not_ready', reason: options.quotes ? 'NO_RECENT_SUCCESSFUL_QUOTE' : 'NO_VERIFIED_LIQUIDITY_ADAPTERS' }));

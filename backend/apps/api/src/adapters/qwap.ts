@@ -74,6 +74,7 @@ export class QwapQuotes {
     this.config = structuredClone(config);
   }
   get venueId() { return this.config.id; }
+  get venueIds(): readonly string[] { return [this.config.id]; }
   ready(): boolean { return this.lastSuccess > 0 && this.now() - this.lastSuccess < 30_000; }
   async quote(request: QuoteRequest, venueId?: string, snapshot?: Snapshot) {
     if (venueId !== undefined && venueId !== this.config.id) throw new QuoteError('UNSUPPORTED_VENUE', 422);

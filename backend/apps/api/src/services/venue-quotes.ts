@@ -7,7 +7,7 @@ export interface Comparison {
   quotes: VenueQuote[];
   coverage: { venues: string[]; availableVenues: string[]; complete: boolean; routeScope: string; failures: { venue: string; error: string }[] };
 }
-export type QuoteSource = Pick<QwapQuotes, 'quote' | 'ready'> & { compare?(request: QuoteRequest): Promise<Comparison> };
+export type QuoteSource = Pick<QwapQuotes, 'quote' | 'ready'> & { readonly venueIds?: readonly string[]; compare?(request: QuoteRequest): Promise<Comparison> };
 export const COMPARISON_TIMEOUT_MS = 30_000;
 export class VenueQuotes implements QuoteSource {
   private readonly venues = new Map<string, Pick<QwapQuotes, 'venueId' | 'quote' | 'ready'>>();
@@ -20,6 +20,7 @@ export class VenueQuotes implements QuoteSource {
     }
   }
   ready() { return [...this.venues.values()].some(venue => venue.ready()); }
+  get venueIds(): readonly string[] { return [...this.venues.keys()]; }
   async quote(request: QuoteRequest, venueId?: string) {
     if (!venueId) throw new QuoteError('VENUE_REQUIRED', 400);
     const adapter = this.venues.get(venueId);
