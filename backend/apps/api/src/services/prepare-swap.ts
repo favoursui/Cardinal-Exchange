@@ -67,8 +67,24 @@ export class SwapPreparer {
       !samePath(fresh.path, original.quote.path) || !samePath(fresh.pools, original.quote.pools)) {
       throw new QuoteError('ROUTE_CHANGED_REQUOTE', 409);
     }
+    for (const quote of [original.quote, fresh]) {
+      if (quote.chainId !== original.request.chainId ||
+        quote.tokenIn.toLowerCase() !== original.request.tokenIn.toLowerCase() ||
+        quote.tokenOut.toLowerCase() !== original.request.tokenOut.toLowerCase() ||
+        quote.amountIn !== original.request.amountIn || quote.slippageBps !== original.request.slippageBps ||
+        quote.path.length < 2 || quote.path.length > 3 || quote.pools.length !== quote.path.length - 1 ||
+        quote.path[0]?.toLowerCase() !== original.request.tokenIn.toLowerCase() ||
+        quote.path.at(-1)?.toLowerCase() !== original.request.tokenOut.toLowerCase() ||
+        ![quote.amountOut, quote.minimumAmountOut].every(value => /^[1-9][0-9]{0,77}$/.test(value) && BigInt(value) <= MAX_UINT256)) {
+        throw new QuoteError('QUOTE_INTENT_MISMATCH', 409);
+      }
+    }
     const originalMinimum = BigInt(original.quote.minimumAmountOut);
     if (BigInt(fresh.amountOut) < originalMinimum) throw new QuoteError('PRICE_MOVED_REQUOTE', 409);
+    if ([original.quote, fresh].some(quote => BigInt(quote.minimumAmountOut) !==
+      BigInt(quote.amountOut) * BigInt(10000 - original.request.slippageBps) / 10000n)) {
+      throw new QuoteError('QUOTE_INTENT_MISMATCH', 409);
+    }
     const minimum = BigInt(fresh.minimumAmountOut) > originalMinimum ? BigInt(fresh.minimumAmountOut) : originalMinimum;
     const amount = BigInt(original.request.amountIn);
     const block = BigInt(fresh.blockNumber);
@@ -83,13 +99,17 @@ export class SwapPreparer {
     });
     if (balance === undefined || allowance === undefined || !isUint(balance) || !isUint(allowance)) throw new QuoteError('INVALID_WALLET_STATE');
     const ensureFresh = () => {
-      if (this.now() >= Date.parse(fresh.expiresAt) || this.now() - started >= PREPARE_TIMEOUT_MS) throw new QuoteError('PREPARATION_EXPIRED', 409);
+      const expires = Date.parse(fresh.expiresAt), quoted = Date.parse(fresh.quotedAt);
+      if (!Number.isFinite(expires) || !Number.isFinite(quoted) || expires <= quoted || expires - quoted > 15000 ||
+        quoted > this.now() || this.now() >= expires || this.now() - started >= PREPARE_TIMEOUT_MS) throw new QuoteError('PREPARATION_EXPIRED', 409);
     };
     ensureFresh();
     if (balance < amount) throw new QuoteError('INSUFFICIENT_TOKEN_BALANCE', 422);
     if (allowance < amount) {
+      if (await this.rpc.blockHash(block) !== fresh.blockHash) throw new QuoteError('BLOCK_REORG');
+      ensureFresh();
       // Instructions only. No approval calldata or unlimited allowance is returned.
-      return { status: 'approval_required' as const, quoteId, chainId: CHAIN_ID,
+      return { status: 'approval_required' as const, quoteId, venue: fresh.venue, chainId: CHAIN_ID,
         token: fresh.tokenIn, owner: account, spender: fresh.router, amount: amount.toString(),
         currentAllowance: allowance.toString(), resetAllowanceFirst: allowance > 0n,
         refreshQuoteAfterApproval: true, transaction: null };

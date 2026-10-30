@@ -47,3 +47,11 @@ Preparation admits two concurrent computations per process, has a 30-second resp
 Reference ABI/source: https://testnet.qmsscan.io/api/v2/smart-contracts/0x93AFF45f28e5DF1b55f5AEFEfB807De843b12619
 
 Multi-venue update: quote IDs also bind the configured router. Refresh, allowance checks, simulation and calldata remain on the selected venue even when another exchange quotes more output. See exchange-comparison.md. Public QMS remains QWAP-only until a Cardinal deployment is verified.
+
+## Approval and refresh validation hardening
+
+Swap approval instructions now require the same final canonical block-hash check as a prepared swap. If the block disappears or changes while wallet state is read, no approval instructions are returned. Expiry is checked again after that final RPC call.
+
+Preparation explicitly binds both the cached and refreshed quote to the original request's token pair, input amount and slippage. It checks route endpoints/hop count, positive uint256 output values and the adapter's floor-rounded minimum-output calculation. A malformed refreshed quote fails before wallet balance or allowance reads. The stronger of the original and refreshed minimums remains the transaction minimum.
+
+Malformed, future, expired or overlong refreshed quote time windows are rejected, rather than relying on JavaScript comparisons against an invalid date. The adapter uses a single clock sample for its quote timestamp and 15-second expiry. The quote store refuses malformed or already-expired expiry values. These are additional internal validation boundaries; they do not replace wallet review, contract enforcement or independent security assessment.

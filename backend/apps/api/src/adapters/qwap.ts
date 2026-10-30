@@ -240,6 +240,7 @@ export class QwapQuotes {
     const confirmed = await this.rpc.block(block.number);
     requireCondition(confirmed.hash === block.hash, 'BLOCK_REORG');
     requireCondition(this.now() - started < QUOTE_TIMEOUT_MS, 'QUOTE_TIMEOUT');
+    const quotedAt = this.now();
     return {
       venue: this.config.id, venueName: this.config.name, router: this.config.router, chainId: CHAIN_ID,
       tokenIn: input.address, tokenOut: output.address,
@@ -251,7 +252,7 @@ export class QwapQuotes {
       selectionBasis: 'highest-output-before-gas',
       alternatives: routes.slice(1).map(route => ({ path: route.path, pools: route.hops.map(hop => hop.pool), amountOut: route.expected.toString() })),
       blockNumber: block.number.toString(), blockHash: block.hash,
-      quotedAt: new Date(this.now()).toISOString(), expiresAt: new Date(this.now() + 15000).toISOString(),
+      quotedAt: new Date(quotedAt).toISOString(), expiresAt: new Date(quotedAt + 15000).toISOString(),
       executable: false, routeScope: 'direct-and-via-wqms', gasEstimate: null,
       // Relative to the product of reserve spot prices; includes every hop fee. Rounded up.
       priceImpactIncludingFeeBps: Number(((best.spotNumerator - expected * best.spotDenominator) * 10000n + best.spotNumerator - 1n) / best.spotNumerator),
