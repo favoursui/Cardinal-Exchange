@@ -58,4 +58,4 @@ Read a registered pool and optional wallet LP position with `GET /v1/pools/:venu
 
 ## Unsigned liquidity withdrawals
 
-`POST /v1/liquidity/remove/prepare` verifies owned LP shares, requests exact allowance when needed, and simulates a withdrawal before returning unsigned calldata. Enable separately with `LIQUIDITY_PREPARATION_ENABLED=true` alongside the quote flag. See [withdrawal preparation](docs/liquidity-removal.md). Liquidity deposits remain pending.
+`POST /v1/liquidity/remove/prepare` verifies owned LP shares, requests exact allowance when needed, and simulates a withdrawal before returning unsigned calldata. Enable separately with `LIQUIDITY_PREPARATION_ENABLED=true` alongside the quote flag. See [withdrawal preparation](docs/liquidity-removal.md). Deposits into existing pools are also supported; see [deposit preparation](docs/liquidity-addition.md).

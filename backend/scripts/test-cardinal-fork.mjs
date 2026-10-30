@@ -1,3 +1,4 @@
+import { createAdditionReader } from '../dist/apps/api/src/services/prepare-addition.js';
 import { createRemovalReader } from '../dist/apps/api/src/services/prepare-removal.js';
 // LOCAL-ONLY integration test: never accepts an external transaction endpoint.
 import assert from 'node:assert/strict';
@@ -83,7 +84,7 @@ try {
     wrappedGetter:'WETH',tokens:QWAP.tokens};
   const adapters = [new QwapQuotes(rpc),new QwapQuotes(rpc,Date.now,config)];
   const group = new VenueQuotes(rpc,adapters);
-  app = await buildApp({rateLimitMax:100,quotes:group,pools:adapters,removalExecution:createRemovalReader(client),execution:createExecutionReader(client)});
+  app = await buildApp({rateLimitMax:100,quotes:group,pools:adapters,removalExecution:createRemovalReader(client),additionExecution:createAdditionReader(client),execution:createExecutionReader(client)});
   const post = async (url,payload) => {
     const result=await app.inject({method:'POST',url,payload});
     assert.equal(result.statusCode,200,result.body);return result.json();
@@ -121,6 +122,35 @@ try {
     assert.ok(received>=BigInt(prepared.minimumAmountOut));
     assert.equal(await client.readContract({address:wrapped,abi:erc20Abi,functionName:'allowance',args:[account,expectedRouter]}),0n);
     results.push({selectedVenue:venue,router:expectedRouter,received:received.toString()});
+  }
+  // Add to the seeded pool through the exact unsigned API transaction.
+  const lpBeforeDeposit = await client.readContract({address:pair,abi:erc20Abi,functionName:'balanceOf',args:[account]});
+  const depositRequest = {chainId:19480,venue:'cardinal',tokenA:usdc,tokenB:wrapped,
+    amountADesired:'1000000',amountBDesired:'1000000000000000000',slippageBps:50,wallet:account};
+  const depositApproval = await post('/v1/liquidity/add/prepare',depositRequest);
+  assert.equal(depositApproval.status,'approval_required');
+  assert.equal(depositApproval.approvals.length,2);
+  for (const approval of depositApproval.approvals) {
+    assert.equal(approval.spender.toLowerCase(),router.toLowerCase());
+    assert.equal(approval.amount,approval.token.toLowerCase()===wrapped.toLowerCase()?depositRequest.amountBDesired:depositRequest.amountADesired);
+    await receipt(await wallet.writeContract({address:approval.token,abi:erc20Abi,functionName:'approve',args:[router,BigInt(approval.amount)]}));
+  }
+  const deposit = await post('/v1/liquidity/add/prepare',depositRequest);
+  assert.equal(deposit.status,'prepared');
+  assert.equal(deposit.liquidityMinimumEnforced,false);
+  const depositBalances = await Promise.all([balance(deposit.token0.address),balance(deposit.token1.address)]);
+  const depositTx = deposit.transaction;
+  assert.equal(depositTx.to.toLowerCase(),router.toLowerCase());
+  await receipt(await wallet.sendTransaction({to:depositTx.to,data:depositTx.data,value:BigInt(depositTx.value),gas:BigInt(depositTx.gas)}));
+  const minted = await client.readContract({address:pair,abi:erc20Abi,functionName:'balanceOf',args:[account]})-lpBeforeDeposit;
+  assert.equal(minted,BigInt(deposit.estimatedLiquidity));
+  assert.ok(minted>0n);
+  for (const [i,token] of [deposit.token0.address,deposit.token1.address].entries()) {
+    const spent = depositBalances[i]-await balance(token);
+    assert.equal(spent,BigInt(i===0?deposit.amount0:deposit.amount1));
+    assert.ok(spent<=BigInt(i===0?deposit.amount0Desired:deposit.amount1Desired));
+    const remaining = await client.readContract({address:token,abi:erc20Abi,functionName:'allowance',args:[account,router]});
+    assert.equal(remaining,BigInt(i===0?deposit.amount0Desired:deposit.amount1Desired)-spent);
   }
   // Verify the liquidity provider can redeem its shares after trading.
   const lp=await client.readContract({address:pair,abi:erc20Abi,functionName:'balanceOf',args:[account]});
@@ -160,7 +190,7 @@ try {
   assert.equal(withdrawn.statusCode,200,withdrawn.body);
   assert.equal(withdrawn.json().position.lpBalance,'0');
   console.log(JSON.stringify({status:'passed',scope:'localhost fork only',forkBlock:metadata.forkedNetwork.forkBlockNumber,
-    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API','simulated unsigned withdrawal API'],swaps:results},null,2));
+    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API','simulated unsigned withdrawal API','simulated unsigned deposit API','deposit caps and remaining allowances'],swaps:results},null,2));
 } finally {
   if(app) await app.close();
   await client.request({method:'anvil_removeBlockTimestampInterval'});

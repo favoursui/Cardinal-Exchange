@@ -1,3 +1,4 @@
+import { createAdditionReader } from './services/prepare-addition.js';
 import { createPublicClient, http } from 'viem';
 import { QWAP } from './adapters/qwap-registry.js';
 import { createRemovalReader } from './services/prepare-removal.js';
@@ -23,10 +24,11 @@ if (process.env.LIQUIDITY_PREPARATION_ENABLED !== undefined && !['true', 'false'
 if (process.env.LIQUIDITY_PREPARATION_ENABLED === 'true' && process.env.QWAP_QUOTES_ENABLED !== 'true') {
   throw new Error('Liquidity preparation requires QWAP_QUOTES_ENABLED=true');
 }
+const liquidityClient = createPublicClient({ transport: http(QWAP.rpcUrl, { timeout: 8000, retryCount: 0 }), cacheTime: 0 });
 const quoteReader = createQwapReader();
 const qwap = new QwapQuotes(quoteReader);
 const app = await buildApp({ logger: true,
-  ...(process.env.LIQUIDITY_PREPARATION_ENABLED === 'true' ? { removalExecution: createRemovalReader(createPublicClient({ transport: http(QWAP.rpcUrl, { timeout: 8000, retryCount: 0 }), cacheTime: 0 })) } : {}),
+  ...(process.env.LIQUIDITY_PREPARATION_ENABLED === 'true' ? { removalExecution: createRemovalReader(liquidityClient), additionExecution: createAdditionReader(liquidityClient) } : {}),
   tracker: new TransactionTracker(createStatusReader()),
   ...(process.env.QWAP_QUOTES_ENABLED === 'true' ? { quotes: new VenueQuotes(quoteReader, [qwap]), pools: [qwap] } : {}),
   ...(process.env.SWAP_PREPARATION_ENABLED === 'true' ? { execution: createExecutionReader() } : {}),
