@@ -63,3 +63,7 @@ Read a registered pool and optional wallet LP position with `GET /v1/pools/:venu
 ## Frontend capability discovery
 
 `GET /v1/capabilities` reports enabled operations, registered venue IDs and testnet execution restrictions without contacting RPC. Configuration is separate from live readiness. See [capability discovery](docs/capabilities.md).
+
+## Wallet balances
+
+`GET /v1/wallets/:wallet/:venue?token=<address>` returns a registered token balance and allowance for that venue's router at one verified block. Enabled with the quote flag. See [wallet balances](docs/wallet-balances.md).

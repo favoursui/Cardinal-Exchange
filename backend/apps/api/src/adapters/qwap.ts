@@ -14,6 +14,7 @@ const abi: Abi = parseAbi([
   'function getPair(address,address) view returns (address)',
   'function totalSupply() view returns (uint256)',
   'function balanceOf(address) view returns (uint256)',
+  'function allowance(address,address) view returns (uint256)',
   'function token0() view returns (address)',
   'function token1() view returns (address)',
   'function getReserves() view returns (uint112,uint112,uint32)',
@@ -116,6 +117,43 @@ export class QwapQuotes {
     ]);
     const bridge = this.config.tokens[0]!.address;
     requireCondition(same(factory, this.config.factory) && same(wrapped, bridge), 'CONTRACT_IDENTITY_MISMATCH');
+  }
+  async walletToken(tokenAddress: string, wallet: string) {
+    const token = this.config.tokens.find(t => same(t.address, tokenAddress));
+    if (!token) throw new QuoteError('UNSUPPORTED_TOKEN', 422);
+    if (!isAddress(wallet) || same(wallet, zeroAddress)) throw new QuoteError('INVALID_WALLET', 400);
+    if (this.active >= 4) throw new QuoteError('QUOTE_CAPACITY_EXCEEDED');
+    this.active++;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const work = this.fetchWalletToken(token, wallet).finally(() => { this.active--; });
+    try {
+      return await Promise.race([work, new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new QuoteError('WALLET_READ_TIMEOUT')), QUOTE_TIMEOUT_MS);
+      })]);
+    } catch (error) {
+      if (error instanceof QuoteError) throw error;
+      throw new QuoteError('UPSTREAM_UNAVAILABLE');
+    } finally { clearTimeout(timer); }
+  }
+  private async fetchWalletToken(token: VenueConfig['tokens'][number], wallet: Address) {
+    const started = this.now();
+    requireCondition(await this.rpc.chainId() === CHAIN_ID, 'CHAIN_MISMATCH');
+    const block = await this.rpc.block();
+    const age = BigInt(Math.floor(this.now() / 1000)) - block.timestamp;
+    requireCondition(age >= -15n && age <= 120n, 'STALE_BLOCK');
+    await this.verifyIdentity(token.address, token.address, block);
+    const [balance, allowance] = await settledGroup([
+      this.rpc.read(token.address, 'balanceOf', [wallet], block.number),
+      this.rpc.read(token.address, 'allowance', [wallet, this.config.router], block.number),
+    ]);
+    requireCondition(uint(balance) && uint(allowance), 'INVALID_WALLET_STATE');
+    requireCondition((await this.rpc.block(block.number)).hash === block.hash, 'BLOCK_REORG');
+    requireCondition(this.now() - started < QUOTE_TIMEOUT_MS, 'WALLET_READ_TIMEOUT');
+    return { chainId: CHAIN_ID, venue: this.config.id, wallet,
+      token: { address: token.address, symbol: token.symbol, decimals: token.decimals },
+      spender: this.config.router, balance: balance.toString(), allowance: allowance.toString(),
+      blockNumber: block.number.toString(), blockHash: block.hash, observedAt: new Date(this.now()).toISOString(),
+    };
   }
   async pool(tokenA: string, tokenB: string, wallet?: string) {
     const input = this.config.tokens.find(t => same(t.address, tokenA));

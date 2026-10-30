@@ -15,7 +15,9 @@ import { QuoteStore } from './services/quote-store.js';
 import { SwapPreparer } from './services/prepare-swap.js';
 import type { ExecutionReader } from './services/prepare-swap.js';
 import type { TransactionTracker } from './services/transaction-status.js';
-export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; pools?: readonly Pick<QwapQuotes, 'venueId' | 'pool'>[]; execution?: ExecutionReader; removalExecution?: ExecutionReader; additionExecution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
+export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; wallets?: readonly Pick<QwapQuotes, 'venueId' | 'walletToken'>[]; pools?: readonly Pick<QwapQuotes, 'venueId' | 'pool'>[]; execution?: ExecutionReader; removalExecution?: ExecutionReader; additionExecution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
+  const wallets = new Map((options.wallets ?? []).map(adapter => [adapter.venueId, adapter]));
+  if (wallets.size !== (options.wallets?.length ?? 0) || wallets.size > 4) throw new Error('Invalid wallet adapter registry');
   const pools = new Map((options.pools ?? []).map(adapter => [adapter.venueId, adapter]));
   if (pools.size !== (options.pools?.length ?? 0) || pools.size > 4) throw new Error('Invalid pool adapter registry');
   if (options.execution && !options.quotes) throw new Error('Transaction preparation requires quotes');
@@ -31,6 +33,7 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
     operations: {
       quotes: { enabled: !!options.quotes, venues: quoteVenues },
       swapPreparation: { enabled: !!preparer, venues: preparer ? quoteVenues : [] },
+      walletReads: { enabled: wallets.size > 0, venues: [...wallets.keys()].sort() },
       poolReads: { enabled: pools.size > 0, venues: poolVenues },
       liquidityAddition: { enabled: !!addition, venues: addition ? poolVenues : [] },
       liquidityRemoval: { enabled: !!removal, venues: removal ? poolVenues : [] },
@@ -66,6 +69,26 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
     ? { status: 'ok', scope: 'read-only-quotes' }
     : reply.code(503).send({ status: 'not_ready', reason: options.quotes ? 'NO_RECENT_SUCCESSFUL_QUOTE' : 'NO_VERIFIED_LIQUIDITY_ADAPTERS' }));
   app.get('/v1/tokens', async () => ({ chainId: CHAIN_ID, tokens: QWAP.tokens.map(({ address, symbol, decimals }) => ({ address, symbol, decimals, testnet: true })) }));
+  app.get<{ Params: { wallet: string; venue: string }; Querystring: { token: string } }>('/v1/wallets/:wallet/:venue', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: {
+      params: { type: 'object', additionalProperties: false, required: ['wallet', 'venue'], properties: {
+        wallet: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' }, venue: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,31}$' },
+      } },
+      querystring: { type: 'object', additionalProperties: false, required: ['token'], properties: {
+        token: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' },
+      } },
+    },
+  }, async (request, reply) => {
+    if (!wallets.size) return reply.code(503).send({ error: 'WALLET_READS_DISABLED' });
+    const adapter = wallets.get(request.params.venue);
+    if (!adapter) return reply.code(422).send({ error: 'UNSUPPORTED_VENUE' });
+    try { return await adapter.walletToken(request.query.token, request.params.wallet); }
+    catch (error) {
+      if (error instanceof QuoteError) return reply.code(error.status).send({ error: error.code });
+      throw error;
+    }
+  });
   app.get<{ Params: { venue: string }; Querystring: { tokenA: string; tokenB: string; wallet?: string } }>('/v1/pools/:venue', {
     config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
     schema: {

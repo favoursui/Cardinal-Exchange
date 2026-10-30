@@ -8,6 +8,7 @@ The response includes `apiVersion: "v1"`, `chainId: 19480`, `testnet: true`, and
 | --- | --- | --- |
 | `quotes` | Quote source is configured | Quote adapter IDs |
 | `swapPreparation` | Quote source and swap execution reader exist | Quote adapter IDs |
+| `walletReads` | Wallet adapters are configured | Wallet adapter IDs |
 | `poolReads` | Pool adapters are configured | Pool adapter IDs |
 | `liquidityAddition` | Addition preparer is configured | Pool adapter IDs |
 | `liquidityRemoval` | Removal preparer is configured | Pool adapter IDs |
@@ -21,4 +22,4 @@ The `restrictions` object describes the currently implemented policies: unsigned
 
 Frontend flow: read capabilities, verify the expected chain, show controls only for supported operations, obtain tokens from `/v1/tokens`, and request actual quotes/pool state before wallet review. Configuration discovery never replaces independent validation of transaction destination, token amounts, spender, recipient, deadline and chain. The frontend is not implemented yet.
 
-Server flags are unchanged: `QWAP_QUOTES_ENABLED` enables quotes and pool reads, `SWAP_PREPARATION_ENABLED` enables swap preparation, and `LIQUIDITY_PREPARATION_ENABLED` enables both deposit and withdrawal preparation. Execution flags require quotes. Tracking is configured independently and remains enabled in the public server even when trading features are disabled.
+Server flags are unchanged: `QWAP_QUOTES_ENABLED` enables quotes, pool reads and wallet reads, `SWAP_PREPARATION_ENABLED` enables swap preparation, and `LIQUIDITY_PREPARATION_ENABLED` enables both deposit and withdrawal preparation. Execution flags require quotes. Tracking is configured independently and remains enabled in the public server even when trading features are disabled.

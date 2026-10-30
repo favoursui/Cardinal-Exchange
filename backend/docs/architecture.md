@@ -69,3 +69,7 @@ Registered V2 venues now expose block-pinned reserves and optional wallet LP pos
 ## Capability discovery
 
 `GET /v1/capabilities` exposes configured operation and venue scopes for future frontend integration. It performs no RPC work and makes no liquidity or execution-readiness claim. See [capabilities](capabilities.md).
+
+## Wallet reads
+
+Registered venues expose single-token balances and router allowances at a verified snapshot via `GET /v1/wallets/:wallet/:venue?token=<address>`. See [wallet balances](wallet-balances.md). These observations do not reserve funds or replace transaction preparation.

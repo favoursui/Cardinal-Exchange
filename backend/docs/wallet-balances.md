@@ -1,0 +1,15 @@
+# Wallet token balances and router allowances
+
+`GET /v1/wallets/:wallet/:venue?token=<address>` reads one supported ERC-20 token's balance and allowance for the selected venue's registered router. Wallet must be a nonzero address. Token must belong to that venue's reviewed registry. Caller-supplied spender/RPC parameters, extra query properties and token lists are rejected.
+
+The result includes chain ID, venue, wallet, token address/symbol/decimals, router `spender`, decimal base-unit `balance` and `allowance`, snapshot block number/hash, and observation time. Zero balances and allowances are valid. No floating-point conversion, fiat valuation or approval recommendation is performed. This is not a full portfolio index: native QMS, unknown tokens and LP shares are excluded. LP positions remain available through the pool endpoint.
+
+The public server enables QWAP wallet reads with `QWAP_QUOTES_ENABLED=true`, sharing the same adapter instance as quotes and pool reads. Capabilities now include `operations.walletReads` with its configured venue IDs. Cardinal is supported only in the local fork configuration. Unconfigured reads return 503 `WALLET_READS_DISABLED`; unknown venues/tokens return 422.
+
+Reads verify testnet chain ID, fresh snapshot timestamp, router/factory/token identities and router linkage before reading wallet state. Both values come from the same block, must be valid uint256 integers, and are returned only after rechecking the canonical block hash. Errors are sanitized. A failed read is not represented as a zero balance. Requests have a 20-second deadline, share the adapter's four in-flight slots with quotes/pool reads, and retain slots until underlying work settles. The route permits 20 requests/minute per IP and disables response caching. Successful wallet reads do not mark quote readiness successful.
+
+These are observed on-chain balances, not a promise that a transaction will succeed or that funds are reserved. State can change after the snapshot. Always run transaction preparation again before wallet review; do not assume a nonzero allowance is sufficient or safe for an arbitrary transaction. This endpoint never changes allowances, signs or broadcasts. There is no native gas-balance check yet.
+
+Tests cover large integer precision, zero values, selected spender, pinned reads, wrong chain, identity failures, stale/reorged blocks, invalid RPC values, query validation, sanitized errors and capacity retained after timeout. The local fork harness independently compares API values with direct contract reads for both Cardinal and QWAP, where the same token has different router allowances.
+
+Recorded verification: local QMS fork source block **241349** passed both venues' wallet balance/allowance comparisons, swap preparation and execution, deposit and complete withdrawal. The snapshot was restored and Anvil stopped. `npm run check` passed **75 tests**, strict type checking and compilation. No public transactions or deployments occurred. Unit test directories remain ignored under the existing repository policy; the fork script is outside them.

@@ -30,7 +30,7 @@ const qwap = new QwapQuotes(quoteReader);
 const app = await buildApp({ logger: true,
   ...(process.env.LIQUIDITY_PREPARATION_ENABLED === 'true' ? { removalExecution: createRemovalReader(liquidityClient), additionExecution: createAdditionReader(liquidityClient) } : {}),
   tracker: new TransactionTracker(createStatusReader()),
-  ...(process.env.QWAP_QUOTES_ENABLED === 'true' ? { quotes: new VenueQuotes(quoteReader, [qwap]), pools: [qwap] } : {}),
+  ...(process.env.QWAP_QUOTES_ENABLED === 'true' ? { quotes: new VenueQuotes(quoteReader, [qwap]), pools: [qwap], wallets: [qwap] } : {}),
   ...(process.env.SWAP_PREPARATION_ENABLED === 'true' ? { execution: createExecutionReader() } : {}),
 });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void app.close(); });

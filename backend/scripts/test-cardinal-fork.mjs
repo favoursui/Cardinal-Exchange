@@ -84,7 +84,7 @@ try {
     wrappedGetter:'WETH',tokens:QWAP.tokens};
   const adapters = [new QwapQuotes(rpc),new QwapQuotes(rpc,Date.now,config)];
   const group = new VenueQuotes(rpc,adapters);
-  app = await buildApp({rateLimitMax:100,quotes:group,pools:adapters,removalExecution:createRemovalReader(client),additionExecution:createAdditionReader(client),execution:createExecutionReader(client)});
+  app = await buildApp({rateLimitMax:100,quotes:group,pools:adapters,wallets:adapters,removalExecution:createRemovalReader(client),additionExecution:createAdditionReader(client),execution:createExecutionReader(client)});
   const post = async (url,payload) => {
     const result=await app.inject({method:'POST',url,payload});
     assert.equal(result.statusCode,200,result.body);return result.json();
@@ -134,6 +134,16 @@ try {
     assert.equal(approval.spender.toLowerCase(),router.toLowerCase());
     assert.equal(approval.amount,approval.token.toLowerCase()===wrapped.toLowerCase()?depositRequest.amountBDesired:depositRequest.amountADesired);
     await receipt(await wallet.writeContract({address:approval.token,abi:erc20Abi,functionName:'approve',args:[router,BigInt(approval.amount)]}));
+  }
+  for (const venue of ['cardinal','qwap']) {
+    const response = await app.inject(`/v1/wallets/${account}/${venue}?token=${wrapped}`);
+    assert.equal(response.statusCode,200,response.body);
+    const state = response.json();
+    const expectedSpender = venue === 'cardinal' ? router : QWAP.router;
+    assert.equal(state.spender.toLowerCase(),expectedSpender.toLowerCase());
+    const blockNumber = BigInt(state.blockNumber);
+    assert.equal(state.balance,(await client.readContract({address:wrapped,abi:erc20Abi,functionName:'balanceOf',args:[account],blockNumber})).toString());
+    assert.equal(state.allowance,(await client.readContract({address:wrapped,abi:erc20Abi,functionName:'allowance',args:[account,expectedSpender],blockNumber})).toString());
   }
   const deposit = await post('/v1/liquidity/add/prepare',depositRequest);
   assert.equal(deposit.status,'prepared');
@@ -190,7 +200,7 @@ try {
   assert.equal(withdrawn.statusCode,200,withdrawn.body);
   assert.equal(withdrawn.json().position.lpBalance,'0');
   console.log(JSON.stringify({status:'passed',scope:'localhost fork only',forkBlock:metadata.forkedNetwork.forkBlockNumber,
-    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API','simulated unsigned withdrawal API','simulated unsigned deposit API','deposit caps and remaining allowances'],swaps:results},null,2));
+    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API','simulated unsigned withdrawal API','simulated unsigned deposit API','deposit caps and remaining allowances','venue-bound wallet balances and allowances'],swaps:results},null,2));
 } finally {
   if(app) await app.close();
   await client.request({method:'anvil_removeBlockTimestampInterval'});
