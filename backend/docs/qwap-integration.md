@@ -16,7 +16,7 @@ Explorer source verification and runtime bytecode were checked for both router a
 
 Both reported verified source and runtime bytecode matching RPC. Router name: QwapRouter, compiler 0.6.6. Its published QwapLibrary uses the 997/1000 constant-product fee calculation. No Solidity source was copied into Cardinal. Explorer license metadata is `none`; this is not permission to fork QWAP contracts. License review remains necessary before reusing any implementation.
 
-This establishes integration identity, not an audit. Code hashes cannot detect every mutable-storage or proxy implementation change. The current API does not produce executable transactions or approval data. Mainnet or transaction building requires additional token/pool implementation review.
+This establishes integration identity, not an audit. Code hashes cannot detect every mutable-storage or proxy implementation change. The quote endpoint does not produce executable transactions or approval data. Mainnet requires additional token/pool implementation review. A separate default-off testnet preparation endpoint now exists; see transaction-preparation.md.
 
 ## Behavior
 

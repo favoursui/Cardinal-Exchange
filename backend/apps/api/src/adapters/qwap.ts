@@ -1,5 +1,5 @@
 import { createPublicClient, http, isAddress, keccak256, parseAbi, zeroAddress } from 'viem';
-import type { Abi, Address, Hex } from 'viem';
+import type { Abi, Address, Hex, PublicClient } from 'viem';
 import { CHAIN_ID, MAX_UINT256, validateQuote } from '../../../../packages/core/src/quote.js';
 import type { QuoteRequest } from '../../../../packages/core/src/quote.js';
 import { QWAP } from './qwap-registry.js';
@@ -21,8 +21,8 @@ export interface QwapReader {
   codeHash(address: Address, block: bigint): Promise<Hex | undefined>;
   read(address: Address, method: string, args: readonly unknown[], block: bigint): Promise<unknown>;
 }
-export function createQwapReader(): QwapReader {
-  const client = createPublicClient({ transport: http(QWAP.rpcUrl, { timeout: 8000, retryCount: 0 }), cacheTime: 0 });
+// Client injection is for local contract integration tests; HTTP users cannot set it.
+export function createQwapReader(client: PublicClient = createPublicClient({ transport: http(QWAP.rpcUrl, { timeout: 8000, retryCount: 0 }), cacheTime: 0 })): QwapReader {
   return {
     chainId: () => client.getChainId(),
     block: async (number) => {

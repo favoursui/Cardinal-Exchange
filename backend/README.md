@@ -2,7 +2,7 @@
 
 Development foundation for a QMS DEX and exchange-by-exchange swap aggregator. TypeScript/Node.js API; planned Next.js frontend and Solidity/Foundry contracts.
 
-This is not a functioning exchange or a mainnet-ready release. A read-only QWAP quote adapter (direct and via WQMS) is available, disabled by default. No wallet transaction builders, Cardinal pools or signing endpoints exist. Unavailable or invalid sources fail closed.
+This is not a functioning exchange or a mainnet-ready release. A read-only QWAP quote adapter (direct and via WQMS) is available, disabled by default. Unsigned testnet swap preparation is available behind a separate flag. Cardinal pools and signing/broadcast endpoints do not exist. Unavailable or invalid sources fail closed.
 
 ## Run locally
 
@@ -26,8 +26,16 @@ These addresses are examples, not verified tokens. Expected result: 503 NO_VERIF
 - [Threat model and actual mitigation status](docs/threat-model.md)
 - [Mainnet release gates](docs/mainnet-release.md)
 
-Current controls include bounded bodies, non-coercing validation, testnet chain restriction, uint256 amount limits, rate limiting, security headers and sanitized errors. Production ingress, distributed rate limiting, frontend security, transaction validation and contract audits remain future work. This workspace currently has no usable Git repository; branch protection and hosted CI must be configured when it is connected to one.
+Current controls include bounded bodies, non-coercing validation, testnet chain restriction, uint256 amount limits, rate limiting, security headers and sanitized errors. Production ingress, distributed rate limiting, frontend security, mainnet execution review and contract audits remain future work. This workspace currently has no usable Git repository; branch protection and hosted CI must be configured when it is connected to one.
 
 ## Live testnet quotes
 
 Run `QWAP_QUOTES_ENABLED=true npm run dev` to enable read-only QWAP quotes. Retrieve supported tokens with `GET /v1/tokens`. Native QMS and arbitrary token addresses are not supported. See [QWAP integration and verification evidence](docs/qwap-integration.md) for a valid request, limitations, and the opt-in live smoke check. Quotes never include executable transactions.
+
+## Unsigned testnet preparation
+
+See [transaction preparation](docs/transaction-preparation.md) for the quote-ID workflow, allowance handling, simulation checks, and limitations. Enable explicitly with `QWAP_QUOTES_ENABLED=true SWAP_PREPARATION_ENABLED=true npm run dev`. A successful response requires sufficient test-token balance and allowance. No backend operation signs or sends a transaction.
+
+## Real-contract integration tests
+
+`npm run test:fork` runs the approval, preparation, simulation and swap flow on a localhost-only Anvil fork. Start the fork as described in [fork testing](docs/fork-testing.md). These tests never submit transactions to public QMS and restore the local snapshot afterward.

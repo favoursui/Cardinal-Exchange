@@ -1,5 +1,5 @@
 import { createPublicClient, decodeFunctionData, decodeFunctionResult, encodeFunctionData, erc20Abi, getAddress, http, parseAbi, zeroAddress } from 'viem';
-import type { Address, Hex } from 'viem';
+import type { Address, Hex, PublicClient } from 'viem';
 import { CHAIN_ID, MAX_UINT256 } from '../../../../packages/core/src/quote.js';
 import { QWAP } from '../adapters/qwap-registry.js';
 import { QuoteError } from '../adapters/qwap.js';
@@ -16,8 +16,7 @@ export interface ExecutionReader {
   estimateGas(tx: UnsignedSwap, block: bigint): Promise<bigint>;
   blockHash(block: bigint): Promise<Hex | null>;
 }
-export function createExecutionReader(): ExecutionReader {
-  const client = createPublicClient({ transport: http(QWAP.rpcUrl, { timeout: 8000, retryCount: 0 }), cacheTime: 0 });
+export function createExecutionReader(client: PublicClient = createPublicClient({ transport: http(QWAP.rpcUrl, { timeout: 8000, retryCount: 0 }), cacheTime: 0 })): ExecutionReader {
   return {
     chainId: () => client.getChainId(),
     balance: (address, owner, blockNumber) => client.readContract({ address, abi: erc20Abi, functionName: 'balanceOf', args: [owner], blockNumber }),
@@ -93,7 +92,7 @@ export class SwapPreparer {
         refreshQuoteAfterApproval: true, transaction: null };
     }
     const deadline = BigInt(Math.floor(this.now() / 1000) + 120);
-    const path = fresh.path.map(getAddress);
+    const path = fresh.path.map(address => getAddress(address));
     const tx: UnsignedSwap = { account, to: QWAP.router, value: 0n,
       data: encodeFunctionData({ abi: swapAbi, functionName: 'swapExactTokensForTokens', args: [amount, minimum, path, account, deadline] }) };
     // Decode the exact payload we will return, rather than relying on UI descriptions.

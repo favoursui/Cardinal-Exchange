@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test apps/api/test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
-    "audit:dependencies": "npm audit --audit-level=moderate"
+    "audit:dependencies": "npm audit --audit-level=moderate",
+    "test:fork": "npm run build && node scripts/test-qwap-fork.mjs"
   },
   "dependencies": {
     "@fastify/helmet": "13.2.0",

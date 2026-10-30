@@ -20,7 +20,7 @@ Use Next.js/TypeScript for the planned frontend, Node.js/Fastify/TypeScript for 
 
 Validate request -> obtain comparable venue quotes concurrently -> discard stale/invalid sources -> present source status and quotes -> user selects venue -> refresh that venue -> construct and independently decode transaction -> simulate -> review allowance -> wallet signs -> track receipt and confirmations/reorgs.
 
-Quote records must bind chain ID, venue, token pair, amount in, output, gas estimate, snapshot block, expiry and fee disclosure. The transaction-build request adds a validated recipient and selected quote identifier. Never silently substitute a venue or recipient. Store quote records server-side or integrity-protect them; expiry and all execution limits are rechecked during transaction construction. Server signatures do not replace on-chain limits.
+Quote records must bind chain ID, venue, token pair, amount in, output, gas estimate, snapshot block, expiry and fee disclosure. The transaction-build request adds a validated wallet and selected quote identifier; the initial implementation fixes the recipient to that wallet. Never silently substitute a venue or recipient. Store quote records server-side or integrity-protect them; expiry and all execution limits are rechecked during transaction construction. Server signatures do not replace on-chain limits.
 
 Label “best price” by output for the same input, pair and snapshot; label net-of-gas separately and only when a trustworthy conversion exists. Missing/failed sources cannot be described as compared. Minimum output rounds down. Display token addresses and decimals from a curated registry; native-token wrapping is explicit. Fee-on-transfer, rebasing and callback tokens are unsupported until specifically reviewed and tested.
 
@@ -50,4 +50,6 @@ References: https://fastify.dev/docs/latest/Reference/Validation-and-Serializati
 
 ## Implementation update
 
-QWAP provenance verification and the read-only adapter with direct and two-hop WQMS route comparison are now implemented. Registry hashes are rechecked at the snapshot block per request, with a final block-hash recheck. The execution lifecycle above remains a target: transaction construction, simulation, wallet signing, routes through other intermediates, cross-venue routing and receipt tracking are not implemented.
+QWAP provenance verification and the read-only adapter with direct and two-hop WQMS route comparison are now implemented. Registry hashes are rechecked at the snapshot block per request, with a final block-hash recheck. The execution lifecycle above remains a target: unsigned transaction construction and block-pinned simulation are now implemented behind a default-off testnet flag. Wallet integration, routes through other intermediates, cross-venue routing and receipt tracking are not implemented.
+
+Unsigned preparation status and remaining execution gates: [transaction preparation](transaction-preparation.md).
