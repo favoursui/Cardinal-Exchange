@@ -30,3 +30,7 @@ Tests cover pool address derivation, creation rules, fee authority, LP deposits/
 `TestToken`, `ReentrantBorrower` and `LiquidityHandler` are test-only contracts. They must never be deployed as production tokens or components. The wrapped-native address in these tests is a placeholder standard token; native wrapping is not covered by this suite.
 
 Test directories remain ignored by Git at the owner's request. Restore them before expecting a fresh clone or CI to reproduce these checks.
+
+## Public testnet planning
+
+Unsigned deployment planning is available with `npm run deployment:plan`. It requires explicit Cardinal public addresses, validates pinned bytecode and testnet RPC state, and never signs or broadcasts. See [deployment preparation and Tower research](../docs/testnet-deployment.md). `npm run test:deployment` runs the offline planner tests; these live outside the ignored test directories.

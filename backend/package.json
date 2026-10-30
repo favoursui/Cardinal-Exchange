@@ -12,11 +12,13 @@
     "start": "node dist/apps/api/src/server.js",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test apps/api/test/*.test.ts",
-    "check": "npm run typecheck && npm test && npm run build",
+    "check": "npm run typecheck && npm test && npm run build && npm run test:deployment",
     "audit:dependencies": "npm audit --audit-level=moderate",
     "test:fork": "npm run build && node scripts/test-qwap-fork.mjs",
     "test:contracts": "node scripts/prepare-amm-artifacts.mjs && forge test --root contracts",
-    "test:cardinal-fork": "npm run build && node scripts/test-cardinal-fork.mjs"
+    "test:cardinal-fork": "npm run build && node scripts/test-cardinal-fork.mjs",
+    "deployment:plan": "npm run build && node scripts/plan-testnet-deployment.mjs",
+    "test:deployment": "node --test scripts/deployment-plan.test.mjs"
   },
   "dependencies": {
     "@fastify/helmet": "13.2.0",
