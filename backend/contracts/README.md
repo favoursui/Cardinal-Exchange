@@ -34,3 +34,5 @@ Test directories remain ignored by Git at the owner's request. Restore them befo
 ## Public testnet planning
 
 Unsigned deployment planning is available with `npm run deployment:plan`. It requires explicit Cardinal public addresses, validates pinned bytecode and testnet RPC state, and never signs or broadcasts. See [deployment preparation and Tower research](../docs/testnet-deployment.md). `npm run test:deployment` runs the offline planner tests; these live outside the ignored test directories.
+
+`npm run deployment:verify` checks deployed creation transactions, runtime bytecode and initial contract state against a plan without enabling the public registry. `npm run test:deployment-local` exercises it against a separate localhost Anvil instance on port 18546; see the deployment preparation guide above.
