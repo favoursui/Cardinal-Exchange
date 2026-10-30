@@ -12,6 +12,8 @@ const abi: Abi = parseAbi([
   'function WQMS() view returns (address)',
   'function WETH() view returns (address)',
   'function getPair(address,address) view returns (address)',
+  'function totalSupply() view returns (uint256)',
+  'function balanceOf(address) view returns (uint256)',
   'function token0() view returns (address)',
   'function token1() view returns (address)',
   'function getReserves() view returns (uint112,uint112,uint32)',
@@ -97,17 +99,12 @@ export class QwapQuotes {
       throw new QuoteError('UPSTREAM_UNAVAILABLE');
     } finally { clearTimeout(timer); }
   }
-  private async fetch(request: QuoteRequest, input: VenueConfig['tokens'][number], output: VenueConfig['tokens'][number], snapshot?: Snapshot) {
-    const started = this.now();
-    requireCondition(await this.rpc.chainId() === CHAIN_ID, 'CHAIN_MISMATCH');
-    const block = snapshot ?? await this.rpc.block();
-    const age = BigInt(Math.floor(this.now() / 1000)) - block.timestamp;
-    requireCondition(age >= -15n && age <= 120n, 'STALE_BLOCK');
-    const read = (address: Address, method: string, args: readonly unknown[] = []) => this.rpc.read(address, method, args, block.number);
+  private async verifyIdentity(input: Address, output: Address, block: Snapshot) {
+    const read = (address: Address, method: string) => this.rpc.read(address, method, [], block.number);
     const identities = [
       { address: this.config.router, codeHash: this.config.routerHash },
       { address: this.config.factory, codeHash: this.config.factoryHash },
-      ...this.config.tokens.filter(t => same(t.address, input.address) || same(t.address, output.address) || same(t.address, this.config.tokens[0]!.address)),
+      ...this.config.tokens.filter(t => same(t.address, input) || same(t.address, output) || same(t.address, this.config.tokens[0]!.address)),
     ];
     const hashes = await settledGroup(identities.map(async ({ address, codeHash }) => {
       return await this.rpc.codeHash(address, block.number) === codeHash;
@@ -118,6 +115,74 @@ export class QwapQuotes {
     ]);
     const bridge = this.config.tokens[0]!.address;
     requireCondition(same(factory, this.config.factory) && same(wrapped, bridge), 'CONTRACT_IDENTITY_MISMATCH');
+  }
+  async pool(tokenA: string, tokenB: string, wallet?: string) {
+    const input = this.config.tokens.find(t => same(t.address, tokenA));
+    const output = this.config.tokens.find(t => same(t.address, tokenB));
+    if (!input || !output) throw new QuoteError('UNSUPPORTED_TOKEN', 422);
+    if (same(tokenA, tokenB)) throw new QuoteError('INVALID_TOKEN_PAIR', 400);
+    if (wallet !== undefined && (!isAddress(wallet) || same(wallet, zeroAddress))) throw new QuoteError('INVALID_WALLET', 400);
+    if (this.active >= 4) throw new QuoteError('QUOTE_CAPACITY_EXCEEDED');
+    this.active++;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const work = this.fetchPool(input.address, output.address, wallet as Address | undefined).finally(() => { this.active--; });
+    try {
+      return await Promise.race([work, new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new QuoteError('POOL_TIMEOUT')), QUOTE_TIMEOUT_MS);
+      })]);
+    } catch (error) {
+      if (error instanceof QuoteError) throw error;
+      throw new QuoteError('UPSTREAM_UNAVAILABLE');
+    } finally { clearTimeout(timer); }
+  }
+  private async fetchPool(input: Address, output: Address, wallet?: Address) {
+    const started = this.now();
+    requireCondition(await this.rpc.chainId() === CHAIN_ID, 'CHAIN_MISMATCH');
+    const block = await this.rpc.block();
+    const age = BigInt(Math.floor(this.now() / 1000)) - block.timestamp;
+    requireCondition(age >= -15n && age <= 120n, 'STALE_BLOCK');
+    await this.verifyIdentity(input, output, block);
+    const read = (address: Address, method: string, args: readonly unknown[] = []) => this.rpc.read(address, method, args, block.number);
+    const pair = await read(this.config.factory, 'getPair', [input, output]);
+    if (same(pair, zeroAddress)) throw new QuoteError('NO_DIRECT_POOL', 404);
+    requireCondition(typeof pair === 'string' && isAddress(pair), 'INVALID_POOL');
+    const [token0, token1, factory, reserves, supply, balance] = await settledGroup([
+      read(pair, 'token0'), read(pair, 'token1'), read(pair, 'factory'), read(pair, 'getReserves'),
+      read(pair, 'totalSupply'), wallet ? read(pair, 'balanceOf', [wallet]) : Promise.resolve(0n),
+    ]);
+    requireCondition(same(factory, this.config.factory) &&
+      ((same(token0, input) && same(token1, output)) || (same(token0, output) && same(token1, input))), 'INVALID_POOL');
+    requireCondition(Array.isArray(reserves) && reserves.length === 3 && uint(reserves[0], (1n << 112n)-1n) && uint(reserves[1], (1n << 112n)-1n), 'INVALID_RESERVES');
+    requireCondition(uint(supply) && uint(balance) && balance <= supply, 'INVALID_LP_STATE');
+    requireCondition(supply > 0n || (reserves[0] === 0n && reserves[1] === 0n), 'INVALID_LP_STATE');
+    requireCondition((await this.rpc.block(block.number)).hash === block.hash, 'BLOCK_REORG');
+    requireCondition(this.now() - started < QUOTE_TIMEOUT_MS, 'POOL_TIMEOUT');
+    const metadata = (address: unknown) => {
+      const token = this.config.tokens.find(t => same(address, t.address))!;
+      return { address: token.address, symbol: token.symbol, decimals: token.decimals };
+    };
+    return {
+      chainId: CHAIN_ID, venue: this.config.id, venueName: this.config.name, pool: pair,
+      factory: this.config.factory, router: this.config.router,
+      token0: metadata(token0), token1: metadata(token1),
+      reserve0: reserves[0].toString(), reserve1: reserves[1].toString(), totalSupply: supply.toString(),
+      position: wallet ? { wallet, lpBalance: balance.toString(),
+        shareBps: (supply ? balance * 10000n / supply : 0n).toString(),
+        estimatedAmount0: (supply ? balance * reserves[0] / supply : 0n).toString(),
+        estimatedAmount1: (supply ? balance * reserves[1] / supply : 0n).toString(),
+        estimateBasis: 'pro-rata-reserves', executable: false } : null,
+      blockNumber: block.number.toString(), blockHash: block.hash, observedAt: new Date(this.now()).toISOString(),
+    };
+  }
+  private async fetch(request: QuoteRequest, input: VenueConfig['tokens'][number], output: VenueConfig['tokens'][number], snapshot?: Snapshot) {
+    const started = this.now();
+    requireCondition(await this.rpc.chainId() === CHAIN_ID, 'CHAIN_MISMATCH');
+    const block = snapshot ?? await this.rpc.block();
+    const age = BigInt(Math.floor(this.now() / 1000)) - block.timestamp;
+    requireCondition(age >= -15n && age <= 120n, 'STALE_BLOCK');
+    const read = (address: Address, method: string, args: readonly unknown[] = []) => this.rpc.read(address, method, args, block.number);
+    await this.verifyIdentity(input.address, output.address, block);
+    const bridge = this.config.tokens[0]!.address;
     const paths: Address[][] = [[input.address, output.address]];
     if (!same(input.address, bridge) && !same(output.address, bridge)) {
       paths.push([input.address, bridge, output.address]);

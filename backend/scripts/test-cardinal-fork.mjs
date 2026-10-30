@@ -80,8 +80,9 @@ try {
   const config = {id:'cardinal',name:'Cardinal',router,factory,
     routerHash:keccak256(await client.getCode({address:router})),factoryHash:keccak256(await client.getCode({address:factory})),
     wrappedGetter:'WETH',tokens:QWAP.tokens};
-  const group = new VenueQuotes(rpc,[new QwapQuotes(rpc),new QwapQuotes(rpc,Date.now,config)]);
-  app = await buildApp({rateLimitMax:100,quotes:group,execution:createExecutionReader(client)});
+  const adapters = [new QwapQuotes(rpc),new QwapQuotes(rpc,Date.now,config)];
+  const group = new VenueQuotes(rpc,adapters);
+  app = await buildApp({rateLimitMax:100,quotes:group,pools:adapters,execution:createExecutionReader(client)});
   const post = async (url,payload) => {
     const result=await app.inject({method:'POST',url,payload});
     assert.equal(result.statusCode,200,result.body);return result.json();
@@ -123,13 +124,28 @@ try {
   // Verify the liquidity provider can redeem its shares after trading.
   const lp=await client.readContract({address:pair,abi:erc20Abi,functionName:'balanceOf',args:[account]});
   assert.ok(lp>0n);
+  const positionUrl = `/v1/pools/cardinal?tokenA=${wrapped}&tokenB=${usdc}&wallet=${account}`;
+  const positionResponse = await app.inject(positionUrl);
+  assert.equal(positionResponse.statusCode,200,positionResponse.body);
+  const poolState = positionResponse.json();
+  assert.equal(poolState.pool.toLowerCase(),pair.toLowerCase());
+  assert.equal(poolState.position.lpBalance,lp.toString());
+  const poolBlock = BigInt(poolState.blockNumber);
+  const poolAbi = parseAbi(['function getReserves() view returns (uint112,uint112,uint32)']);
+  const reserves = await client.readContract({address:pair,abi:poolAbi,functionName:'getReserves',blockNumber:poolBlock});
+  const supply = await client.readContract({address:pair,abi:erc20Abi,functionName:'totalSupply',blockNumber:poolBlock});
+  assert.equal(poolState.position.estimatedAmount0,(lp*reserves[0]/supply).toString());
+  assert.equal(poolState.position.estimatedAmount1,(lp*reserves[1]/supply).toString());
   await receipt(await wallet.writeContract({address:pair,abi:erc20Abi,functionName:'approve',args:[router,lp]}));
   const beforeWrapped=await balance(wrapped),beforeUsdc=await balance(usdc);
   await receipt(await wallet.writeContract({address:router,abi:routerAbi,functionName:'removeLiquidity',args:[wrapped,usdc,lp,0n,0n,account,BigInt(Math.floor(Date.now()/1000)+600)]}));
   assert.ok(await balance(wrapped)>beforeWrapped && await balance(usdc)>beforeUsdc);
   assert.equal(await client.readContract({address:pair,abi:erc20Abi,functionName:'balanceOf',args:[account]}),0n);
+  const withdrawn = await app.inject(positionUrl);
+  assert.equal(withdrawn.statusCode,200,withdrawn.body);
+  assert.equal(withdrawn.json().position.lpBalance,'0');
   console.log(JSON.stringify({status:'passed',scope:'localhost fork only',forkBlock:metadata.forkedNetwork.forkBlockNumber,
-    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal'],swaps:results},null,2));
+    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API'],swaps:results},null,2));
 } finally {
   if(app) await app.close();
   await client.request({method:'anvil_removeBlockTimestampInterval'});

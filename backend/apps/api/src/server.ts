@@ -15,9 +15,10 @@ if (process.env.SWAP_PREPARATION_ENABLED === 'true' && process.env.QWAP_QUOTES_E
   throw new Error('Swap preparation requires QWAP_QUOTES_ENABLED=true');
 }
 const quoteReader = createQwapReader();
+const qwap = new QwapQuotes(quoteReader);
 const app = await buildApp({ logger: true,
   tracker: new TransactionTracker(createStatusReader()),
-  ...(process.env.QWAP_QUOTES_ENABLED === 'true' ? { quotes: new VenueQuotes(quoteReader, [new QwapQuotes(quoteReader)]) } : {}),
+  ...(process.env.QWAP_QUOTES_ENABLED === 'true' ? { quotes: new VenueQuotes(quoteReader, [qwap]), pools: [qwap] } : {}),
   ...(process.env.SWAP_PREPARATION_ENABLED === 'true' ? { execution: createExecutionReader() } : {}),
 });
 for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void app.close(); });

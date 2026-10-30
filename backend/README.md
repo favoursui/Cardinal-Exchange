@@ -2,7 +2,7 @@
 
 Development foundation for a QMS DEX and exchange-by-exchange swap aggregator. TypeScript/Node.js API; planned Next.js frontend and Solidity/Foundry contracts.
 
-This is not a functioning exchange or a mainnet-ready release. A read-only QWAP quote adapter (direct and via WQMS) is available, disabled by default. Unsigned testnet swap preparation is available behind a separate flag. Cardinal pools and signing/broadcast endpoints do not exist. Unavailable or invalid sources fail closed.
+This is not a functioning exchange or a mainnet-ready release. A read-only QWAP quote adapter (direct and via WQMS) is available, disabled by default. Unsigned testnet swap preparation is available behind a separate flag. Cardinal pools exist only in the local fork harness; signing/broadcast endpoints do not exist. Unavailable or invalid sources fail closed.
 
 ## Run locally
 
@@ -51,3 +51,7 @@ The candidate AMM uses pinned, unmodified Uniswap V2 artifacts. `npm run test:co
 ## Exchange comparison
 
 Quotes now carry separate IDs per venue and are ranked by output before gas. Selected-venue preparation preserves its router and approval spender. Public QMS currently exposes QWAP only; `npm run test:cardinal-fork` exercises separate Cardinal pools alongside QWAP locally. See [comparison behavior and limits](docs/exchange-comparison.md).
+
+## Pool and LP positions
+
+Read a registered pool and optional wallet LP position with `GET /v1/pools/:venue?tokenA=<address>&tokenB=<address>&wallet=<address>`. QWAP reads use the quote enable flag. See [pool position semantics and limits](docs/pool-positions.md).

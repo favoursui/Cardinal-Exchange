@@ -6,13 +6,13 @@ Status: development foundation; no trading or production deployment.
 
 Cardinal combines its own AMM pools with exchange-by-exchange quotes from verified external venues. The interface lists Cardinal, QWAP and future supported venues individually, highlights the best comparable quote, and preserves the user's venue selection through execution. Split routing is a later, explicitly labeled option.
 
-Use Next.js/TypeScript for the planned frontend, Node.js/Fastify/TypeScript for the API, Viem for EVM access, Solidity and Foundry for contracts. The frontend and contracts are not implemented yet. Amounts are base-unit decimal strings over JSON and bigint in calculations. Never use floating point for balances, quotes, minimum output, or approvals.
+Use Next.js/TypeScript for the planned frontend, Node.js/Fastify/TypeScript for the API, Viem for EVM access, Solidity and Foundry for contracts. The frontend is not implemented. An unmodified V2 contract candidate is exercised in local tests. Amounts are base-unit decimal strings over JSON and bigint in calculations. Never use floating point for balances, quotes, minimum output, or approvals.
 
 ## Trust boundaries
 
 1. Browser and wallet: browser requests quotes; wallet owns keys and signs. Treat both API results and all user input as untrusted. Independently check chain, selected venue, recipient, amount, spender and transaction destination before requesting signatures. This protects against malformed responses, not a fully compromised frontend; deployment integrity is also essential.
 2. Public API: validates bounded requests; never accepts private keys, arbitrary RPC URLs, caller-provided execution destinations or arbitrary calldata. It has no wallet signing capability. Origins are not authentication.
-3. Adapter and RPC layer (planned): each adapter uses a reviewed chain-specific registry of factory/router addresses, ABI versions, code hashes and token policy. Verify RPC chain ID at startup. Bound concurrency, timeouts and retries. Attribute quotes to block number/hash and retrieval time. Do not combine stale snapshots silently.
+3. Adapter and RPC layer: each adapter uses a reviewed chain-specific registry of factory/router addresses, ABI versions, code hashes and token policy. Verify RPC chain ID at startup. Bound concurrency, timeouts and retries. Attribute quotes to block number/hash and retrieval time. Do not combine stale snapshots silently.
 4. EVM execution: token and DEX contracts are external code. Atomic execution must enforce minimum output, deadline and recipient. API validation cannot replace these protections. The user signs exact amounts and the selected route.
 5. Operations: TLS ingress, restricted proxy trust, secrets management and deployment provenance are production requirements. Current API is loopback-only; process-local rate limiting is a development control.
 
@@ -61,3 +61,7 @@ Unmodified Uniswap V2 core and Router02 artifacts are now pinned and exercised i
 ## Exchange comparison update
 
 Separate registry configurations now drive quote verification and preparation for multiple V2 venues. Comparisons pin a common snapshot, expose per-venue availability and rank output without favoring Cardinal. Quote IDs bind the selected router, and preparation refreshes that venue only. The public server registers QWAP alone; Cardinal registry values exist only in the local-fork harness. See exchange-comparison.md.
+
+## Pool read update
+
+Registered V2 venues now expose block-pinned reserves and optional wallet LP positions through `GET /v1/pools/:venue`. Public configuration enables QWAP only. Estimates are indicative; add/remove-liquidity preparation remains pending. See [pool positions](pool-positions.md).

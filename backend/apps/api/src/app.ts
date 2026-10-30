@@ -4,13 +4,16 @@ import rateLimit from '@fastify/rate-limit';
 import { CHAIN_ID, validateQuote } from '../../../packages/core/src/quote.js';
 import type { QuoteRequest } from '../../../packages/core/src/quote.js';
 import { QuoteError } from './adapters/qwap.js';
+import type { QwapQuotes } from './adapters/qwap.js';
 import type { QuoteSource } from './services/venue-quotes.js';
 import { QWAP } from './adapters/qwap-registry.js';
 import { QuoteStore } from './services/quote-store.js';
 import { SwapPreparer } from './services/prepare-swap.js';
 import type { ExecutionReader } from './services/prepare-swap.js';
 import type { TransactionTracker } from './services/transaction-status.js';
-export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; execution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
+export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; pools?: readonly Pick<QwapQuotes, 'venueId' | 'pool'>[]; execution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
+  const pools = new Map((options.pools ?? []).map(adapter => [adapter.venueId, adapter]));
+  if (pools.size !== (options.pools?.length ?? 0) || pools.size > 4) throw new Error('Invalid pool adapter registry');
   if (options.execution && !options.quotes) throw new Error('Transaction preparation requires quotes');
   const store = new QuoteStore(options.now);
   const preparer = options.execution && options.quotes ? new SwapPreparer(store, options.quotes, options.execution, options.now) : undefined;
@@ -35,6 +38,25 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
     ? { status: 'ok', scope: 'read-only-quotes' }
     : reply.code(503).send({ status: 'not_ready', reason: options.quotes ? 'NO_RECENT_SUCCESSFUL_QUOTE' : 'NO_VERIFIED_LIQUIDITY_ADAPTERS' }));
   app.get('/v1/tokens', async () => ({ chainId: CHAIN_ID, tokens: QWAP.tokens.map(({ address, symbol, decimals }) => ({ address, symbol, decimals, testnet: true })) }));
+  app.get<{ Params: { venue: string }; Querystring: { tokenA: string; tokenB: string; wallet?: string } }>('/v1/pools/:venue', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+    schema: {
+      params: { type: 'object', additionalProperties: false, required: ['venue'], properties: { venue: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,31}$' } } },
+      querystring: { type: 'object', additionalProperties: false, required: ['tokenA', 'tokenB'], properties: {
+        tokenA: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' }, tokenB: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' },
+        wallet: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' },
+      } },
+    },
+  }, async (request, reply) => {
+    if (!pools.size) return reply.code(503).send({ error: 'POOL_READS_DISABLED' });
+    const adapter = pools.get(request.params.venue);
+    if (!adapter) return reply.code(422).send({ error: 'UNSUPPORTED_VENUE' });
+    try { return await adapter.pool(request.query.tokenA, request.query.tokenB, request.query.wallet); }
+    catch (error) {
+      if (error instanceof QuoteError) return reply.code(error.status).send({ error: error.code });
+      throw error;
+    }
+  });
   app.post<{ Body: QuoteRequest }>('/v1/quotes', {
     schema: { body: {
       type: 'object', additionalProperties: false,
