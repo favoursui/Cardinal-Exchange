@@ -1,0 +1,57 @@
+# Dependencies and generated builds
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+
+# Local environment and credentials (keep the safe template)
+.env
+.env.*
+!.env.example
+.aws/
+.secrets/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Tests excluded at the project owner's request
+test/
+tests/
+
+# Test output and tool caches
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+.cache/
+.turbo/
+.npm/
+.eslintcache
+
+# Foundry build and deployment artifacts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# Local agent/editor configuration
+.agents/
+.codex/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs, runtime files, and temporary data
+*.log
+*.pid
+*.pid.lock
+tmp/
+temp/
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
