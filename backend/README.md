@@ -43,3 +43,7 @@ See [transaction preparation](docs/transaction-preparation.md) for the quote-ID 
 ## Transaction tracking
 
 `GET /v1/transactions/<hash>` reports pending, confirming, confirmed, reverted, reorged or not-found status on QMS testnet. Three confirmations are an application threshold, not finality. Replacement detection is not implemented. See [status semantics and limits](docs/transaction-status.md).
+
+## Cardinal pool prototype
+
+The candidate AMM uses pinned, unmodified Uniswap V2 artifacts. `npm run test:contracts` runs local Foundry unit, fuzz and stateful invariant tests. See [contract setup](contracts/README.md) and [AMM decision/provenance](docs/cardinal-amm.md). No Cardinal pools are deployed publicly or included in live quotes yet.

@@ -14,7 +14,8 @@
     "test": "tsx --test apps/api/test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "audit:dependencies": "npm audit --audit-level=moderate",
-    "test:fork": "npm run build && node scripts/test-qwap-fork.mjs"
+    "test:fork": "npm run build && node scripts/test-qwap-fork.mjs",
+    "test:contracts": "node scripts/prepare-amm-artifacts.mjs && forge test --root contracts"
   },
   "dependencies": {
     "@fastify/helmet": "13.2.0",
@@ -24,6 +25,8 @@
   },
   "devDependencies": {
     "@types/node": "22.20.5",
+    "@uniswap/v2-core": "1.0.1",
+    "@uniswap/v2-periphery": "1.1.0-beta.0",
     "tsx": "4.23.15",
     "typescript": "7.0.2"
   }

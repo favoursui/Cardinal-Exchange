@@ -34,6 +34,7 @@ playwright-report/
 contracts/out/
 contracts/cache/
 contracts/broadcast/
+contracts/artifacts/
 
 # Local agent/editor configuration
 .agents/
