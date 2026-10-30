@@ -34,7 +34,7 @@ Document admin powers, upgradeability, fee authority and withdrawal behavior bef
 
 - GET /health/live: process liveness only.
 - GET /health/ready: 503 until an enabled adapter has recently returned a successful quote.
-- POST /v1/quotes: strict testnet input validation; optional read-only QWAP direct-pool quotes. See qwap-integration.md for the implemented scope.
+- POST /v1/quotes: strict testnet input validation; optional read-only QWAP direct and WQMS-mediated quotes. See qwap-integration.md for the implemented scope.
 
 QMS testnet chain ID is 19480. Verify published network details and actual RPC chain ID before integration. No mainnet chain ID is accepted. Slippage request policy is initially 0–500 basis points; this is a ceiling, not a recommended default. Unknown body properties, numeric amounts, zero addresses, identical token pairs and uint256 overflow are rejected.
 
@@ -50,4 +50,4 @@ References: https://fastify.dev/docs/latest/Reference/Validation-and-Serializati
 
 ## Implementation update
 
-QWAP provenance verification and the read-only direct-pool adapter are now implemented. Registry hashes are rechecked at the snapshot block per request, with a final block-hash recheck. The execution lifecycle above remains a target: transaction construction, simulation, wallet signing, broader routes and receipt tracking are not implemented.
+QWAP provenance verification and the read-only adapter with direct and two-hop WQMS route comparison are now implemented. Registry hashes are rechecked at the snapshot block per request, with a final block-hash recheck. The execution lifecycle above remains a target: transaction construction, simulation, wallet signing, routes through other intermediates, cross-venue routing and receipt tracking are not implemented.

@@ -92,34 +92,70 @@ export class QwapQuotes {
     const read = (address: Address, method: string, args: readonly unknown[] = []) => this.rpc.read(address, method, args, block.number);
     const identities = [
       { address: QWAP.router, codeHash: QWAP.routerHash },
-      { address: QWAP.factory, codeHash: QWAP.factoryHash }, input, output,
+      { address: QWAP.factory, codeHash: QWAP.factoryHash },
+      ...QWAP.tokens.filter(t => same(t.address, input.address) || same(t.address, output.address) || same(t.address, QWAP.tokens[0].address)),
     ];
     const hashes = await settledGroup(identities.map(async ({ address, codeHash }) => {
       return await this.rpc.codeHash(address, block.number) === codeHash;
     }));
     requireCondition(hashes.every(Boolean), 'CONTRACT_IDENTITY_MISMATCH');
-    const [factory, wrapped, pair] = await settledGroup([
+    const [factory, wrapped] = await settledGroup([
       read(QWAP.router, 'factory'), read(QWAP.router, 'WQMS'),
-      read(QWAP.factory, 'getPair', [input.address, output.address]),
     ]);
-    requireCondition(same(factory, QWAP.factory) && same(wrapped, QWAP.tokens[0].address), 'CONTRACT_IDENTITY_MISMATCH');
-    if (same(pair, zeroAddress)) throw new QuoteError('NO_DIRECT_POOL', 422);
-    requireCondition(typeof pair === 'string' && isAddress(pair), 'INVALID_POOL');
-    const [token0, token1, pairFactory, reserves, amounts] = await settledGroup([
-      read(pair, 'token0'), read(pair, 'token1'), read(pair, 'factory'), read(pair, 'getReserves'),
-      read(QWAP.router, 'getAmountsOut', [BigInt(request.amountIn), [input.address, output.address]]),
-    ]);
-    requireCondition(same(pairFactory, QWAP.factory), 'INVALID_POOL');
-    const forward = same(token0, input.address) && same(token1, output.address);
-    requireCondition(forward || (same(token0, output.address) && same(token1, input.address)), 'INVALID_POOL');
-    requireCondition(Array.isArray(reserves) && reserves.length === 3 && uint(reserves[0], (1n << 112n)-1n) && uint(reserves[1], (1n << 112n)-1n), 'INVALID_RESERVES');
-    const reserveIn = reserves[forward ? 0 : 1] as bigint;
-    const reserveOut = reserves[forward ? 1 : 0] as bigint;
-    requireCondition(reserveIn > 0n && reserveOut > 0n, 'INSUFFICIENT_LIQUIDITY');
-    requireCondition(Array.isArray(amounts) && amounts.length === 2 && amounts[0] === BigInt(request.amountIn) && uint(amounts[1]) && amounts[1] > 0n, 'INVALID_QUOTE');
+    const bridge = QWAP.tokens[0].address;
+    requireCondition(same(factory, QWAP.factory) && same(wrapped, bridge), 'CONTRACT_IDENTITY_MISMATCH');
+    const paths: Address[][] = [[input.address, output.address]];
+    if (!same(input.address, bridge) && !same(output.address, bridge)) {
+      paths.push([input.address, bridge, output.address]);
+    }
     const amountIn = BigInt(request.amountIn);
-    const expected = amountIn * 997n * reserveOut / (reserveIn * 1000n + amountIn * 997n);
-    requireCondition(amounts[1] === expected && expected < reserveOut, 'QUOTE_RESERVE_MISMATCH');
+    const results = await Promise.allSettled(paths.map(async path => {
+      const hops = await settledGroup(path.slice(0, -1).map(async (from, index) => {
+        const to = path[index + 1]!;
+        const pair = await read(QWAP.factory, 'getPair', [from, to]);
+        if (same(pair, zeroAddress)) throw new QuoteError('NO_DIRECT_POOL', 422);
+        requireCondition(typeof pair === 'string' && isAddress(pair), 'INVALID_POOL');
+        const [token0, token1, pairFactory, reserves] = await settledGroup([
+          read(pair, 'token0'), read(pair, 'token1'), read(pair, 'factory'), read(pair, 'getReserves'),
+        ]);
+        requireCondition(same(pairFactory, QWAP.factory), 'INVALID_POOL');
+        const forward = same(token0, from) && same(token1, to);
+        requireCondition(forward || (same(token0, to) && same(token1, from)), 'INVALID_POOL');
+        requireCondition(Array.isArray(reserves) && reserves.length === 3 && uint(reserves[0], (1n << 112n)-1n) && uint(reserves[1], (1n << 112n)-1n), 'INVALID_RESERVES');
+        const reserveIn = reserves[forward ? 0 : 1] as bigint;
+        const reserveOut = reserves[forward ? 1 : 0] as bigint;
+        requireCondition(reserveIn > 0n && reserveOut > 0n, 'INSUFFICIENT_LIQUIDITY');
+        return { pool: pair, reserveIn, reserveOut };
+      }));
+      requireCondition(new Set(hops.map(hop => hop.pool.toLowerCase())).size === hops.length, 'INVALID_POOL');
+      const amounts = await read(QWAP.router, 'getAmountsOut', [amountIn, path]);
+      requireCondition(Array.isArray(amounts) && amounts.length === path.length && amounts[0] === amountIn, 'INVALID_QUOTE');
+      let expected = amountIn;
+      let spotNumerator = amountIn;
+      let spotDenominator = 1n;
+      for (const [index, hop] of hops.entries()) {
+        expected = expected * 997n * hop.reserveOut / (hop.reserveIn * 1000n + expected * 997n);
+        requireCondition(uint(amounts[index + 1]) && amounts[index + 1] > 0n, 'INVALID_QUOTE');
+        requireCondition(amounts[index + 1] === expected && expected < hop.reserveOut, 'QUOTE_RESERVE_MISMATCH');
+        spotNumerator *= hop.reserveOut;
+        spotDenominator *= hop.reserveIn;
+      }
+      return { path, hops, expected, spotNumerator, spotDenominator };
+    }));
+    // Only known absent/empty pools can be skipped. RPC and integrity failures
+    // invalidate the comparison rather than presenting an unchecked winner.
+    const routes = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+    for (const result of results) {
+      if (result.status === 'rejected' && !(result.reason instanceof QuoteError &&
+          ['NO_DIRECT_POOL', 'INSUFFICIENT_LIQUIDITY'].includes(result.reason.code))) throw result.reason;
+    }
+    if (!routes.length) {
+      if (results.length === 1 && results[0]?.status === 'rejected') throw results[0].reason;
+      throw new QuoteError('NO_ROUTE', 422);
+    }
+    routes.sort((a, b) => a.expected === b.expected ? a.path.length - b.path.length : a.expected > b.expected ? -1 : 1);
+    const best = routes[0]!;
+    const expected = best.expected;
     const minimum = expected * BigInt(10000 - request.slippageBps) / 10000n;
     requireCondition(minimum > 0n, 'AMOUNT_TOO_SMALL');
     const confirmed = await this.rpc.block(block.number);
@@ -129,13 +165,18 @@ export class QwapQuotes {
       venue: 'qwap', venueName: 'QWAP', chainId: CHAIN_ID,
       tokenIn: input.address, tokenOut: output.address,
       amountIn: request.amountIn, amountOut: expected.toString(), minimumAmountOut: minimum.toString(),
-      slippageBps: request.slippageBps, path: [input.address, output.address], pool: pair,
+      slippageBps: request.slippageBps, path: best.path,
+      pool: best.hops.length === 1 ? best.hops[0]!.pool : null,
+      pools: best.hops.map(hop => hop.pool),
+      routesChecked: paths.length, routesAvailable: routes.length,
+      selectionBasis: 'highest-output-before-gas',
+      alternatives: routes.slice(1).map(route => ({ path: route.path, pools: route.hops.map(hop => hop.pool), amountOut: route.expected.toString() })),
       blockNumber: block.number.toString(), blockHash: block.hash,
       quotedAt: new Date(this.now()).toISOString(), expiresAt: new Date(this.now() + 15000).toISOString(),
-      executable: false, routeScope: 'direct-pool-only', gasEstimate: null,
-      // Relative to reserve spot price; includes the pool's 30 bps fee. Rounded up.
-      priceImpactIncludingFeeBps: Number(((amountIn * reserveOut - expected * reserveIn) * 10000n + amountIn * reserveOut - 1n) / (amountIn * reserveOut)),
-      poolFeeBps: 30,
+      executable: false, routeScope: 'direct-and-via-wqms', gasEstimate: null,
+      // Relative to the product of reserve spot prices; includes every hop fee. Rounded up.
+      priceImpactIncludingFeeBps: Number(((best.spotNumerator - expected * best.spotDenominator) * 10000n + best.spotNumerator - 1n) / best.spotNumerator),
+      poolFeeBps: 30, feeScope: 'per-hop',
     };
   }
 }

@@ -2,7 +2,7 @@
 
 Development foundation for a QMS DEX and exchange-by-exchange swap aggregator. TypeScript/Node.js API; planned Next.js frontend and Solidity/Foundry contracts.
 
-This is not a functioning exchange or a mainnet-ready release. A read-only QWAP direct-pool quote adapter is available, disabled by default. No wallet transaction builders, Cardinal pools or signing endpoints exist. Unavailable or invalid sources fail closed.
+This is not a functioning exchange or a mainnet-ready release. A read-only QWAP quote adapter (direct and via WQMS) is available, disabled by default. No wallet transaction builders, Cardinal pools or signing endpoints exist. Unavailable or invalid sources fail closed.
 
 ## Run locally
 

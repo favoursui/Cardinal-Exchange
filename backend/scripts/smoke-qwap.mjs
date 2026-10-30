@@ -14,7 +14,7 @@ for (const method of ['chainId', 'block', 'codeHash', 'read']) {
 const app = await buildApp({ quotes: new QwapQuotes(reader) });
 try {
   const response = await app.inject({ method: 'POST', url: '/v1/quotes', payload: {
-    chainId: 19480, tokenIn: QWAP.tokens[1].address, tokenOut: QWAP.tokens[0].address,
+    chainId: 19480, tokenIn: QWAP.tokens[1].address, tokenOut: QWAP.tokens[process.argv.includes('--multi-hop') ? 2 : 0].address,
     amountIn: '1000000', slippageBps: 50,
   } });
   console.log(JSON.stringify({ statusCode: response.statusCode, body: response.json() }, null, 2));

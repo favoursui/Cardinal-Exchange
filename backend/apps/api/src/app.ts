@@ -44,7 +44,7 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
     if (!validateQuote(request.body)) return reply.code(400).send({ error: 'INVALID_QUOTE_REQUEST' });
     if (!options.quotes) return reply.code(503).send({ error: 'NO_VERIFIED_LIQUIDITY_ADAPTERS', quotes: [] });
     try {
-      return { quotes: [await options.quotes.quote(request.body)], coverage: { venues: ['qwap'], routeScope: 'direct-pool-only' } };
+      return { quotes: [await options.quotes.quote(request.body)], coverage: { venues: ['qwap'], routeScope: 'direct-and-via-wqms' } };
     } catch (error) {
       if (error instanceof QuoteError) return reply.code(error.status).send({ error: error.code, quotes: [] });
       throw error;
