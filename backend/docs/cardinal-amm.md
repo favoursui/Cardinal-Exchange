@@ -53,3 +53,7 @@ These tests use simple test-only tokens and disabled protocol fees. They do not 
 ## Next integration milestone
 
 Deploy the candidate factory/router only on an isolated local QMS fork; record deployment/runtime identities and use the real WQMS/test tokens. Add a separate Cardinal adapter and exchange registry, then compare Cardinal and QWAP quote responses and preserve venue selection through preparation. No public registry address should be invented or promoted from a local deployment.
+
+## Adapter integration update
+
+A shared registry-driven V2 adapter and venue comparison service now support Cardinal on the local fork. The local harness deploys the checked artifacts, seeds a distinct pool, compares it with QWAP, and exercises venue-bound swap preparation and LP withdrawal. No public deployment or Cardinal production registry entry has been added. See exchange-comparison.md.

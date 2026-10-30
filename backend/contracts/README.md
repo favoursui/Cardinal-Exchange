@@ -1,6 +1,6 @@
 # Cardinal AMM prototype
 
-The initial pool foundation uses unmodified **Uniswap V2** factory, pair and Router02 creation artifacts. It is deployed only inside local Foundry tests. There is no public Cardinal deployment or active Cardinal quote source yet.
+The initial pool foundation uses unmodified **Uniswap V2** factory, pair and Router02 creation artifacts. It is deployed only inside local Foundry tests and the isolated QMS fork harness. There is no public Cardinal deployment or active public Cardinal quote source yet.
 
 Pinned dependencies:
 

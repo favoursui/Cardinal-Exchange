@@ -4,13 +4,13 @@ import rateLimit from '@fastify/rate-limit';
 import { CHAIN_ID, validateQuote } from '../../../packages/core/src/quote.js';
 import type { QuoteRequest } from '../../../packages/core/src/quote.js';
 import { QuoteError } from './adapters/qwap.js';
-import type { QwapQuotes } from './adapters/qwap.js';
+import type { QuoteSource } from './services/venue-quotes.js';
 import { QWAP } from './adapters/qwap-registry.js';
 import { QuoteStore } from './services/quote-store.js';
 import { SwapPreparer } from './services/prepare-swap.js';
 import type { ExecutionReader } from './services/prepare-swap.js';
 import type { TransactionTracker } from './services/transaction-status.js';
-export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QwapQuotes; execution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
+export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; execution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
   if (options.execution && !options.quotes) throw new Error('Transaction preparation requires quotes');
   const store = new QuoteStore(options.now);
   const preparer = options.execution && options.quotes ? new SwapPreparer(store, options.quotes, options.execution, options.now) : undefined;
@@ -51,9 +51,12 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
     if (!validateQuote(request.body)) return reply.code(400).send({ error: 'INVALID_QUOTE_REQUEST' });
     if (!options.quotes) return reply.code(503).send({ error: 'NO_VERIFIED_LIQUIDITY_ADAPTERS', quotes: [] });
     try {
-      const quote = await options.quotes.quote(request.body);
-      const quoteId = store.put(request.body, quote);
-      return { quotes: [{ ...quote, quoteId }], coverage: { venues: ['qwap'], routeScope: 'direct-and-via-wqms' } };
+      const result = options.quotes.compare
+        ? await options.quotes.compare(request.body)
+        : { quotes: [await options.quotes.quote(request.body)], coverage: { venues: ['qwap'], routeScope: 'direct-and-via-wqms', complete: true } };
+      const quotes = result.quotes.map((quote, index) => ({ ...quote, quoteId: store.put(request.body, quote), bestAvailablePrice: index === 0 }));
+      if (!quotes.length) return reply.code(503).send({ error: 'NO_AVAILABLE_QUOTES', ...result });
+      return { quotes, coverage: result.coverage, ranking: 'output-before-gas' };
     } catch (error) {
       if (error instanceof QuoteError) return reply.code(error.status).send({ error: error.code, quotes: [] });
       throw error;

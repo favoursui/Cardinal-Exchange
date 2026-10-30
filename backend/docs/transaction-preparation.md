@@ -1,6 +1,6 @@
 # Unsigned testnet swap preparation
 
-Status: experimental, default off. No signing keys, transaction broadcasting, mainnet support, or approval transaction construction. This feature prepares unsigned calldata for the verified QWAP router; it does not deploy Cardinal contracts.
+Status: experimental, default off. No signing keys, transaction broadcasting, mainnet support, or approval transaction construction. This feature prepares unsigned calldata for the selected venue's configured router; it does not deploy Cardinal contracts.
 
 ## Enable locally
 
@@ -23,10 +23,10 @@ POST this body to `/v1/transactions/prepare`. No caller-selected router, recipie
 
 3. The server loads the original quote, refreshes its market data, requires the same venue, path and pool identities, and rejects an output below the originally selected minimum. If a better path is now selected by the router, preparation returns `ROUTE_CHANGED_REQUOTE`; it never silently changes the user's route. Refresh and review a new quote instead.
 4. The server verifies chain ID and reads the wallet's token balance and router allowance at the refreshed quote's block. If funds are insufficient, it returns `INSUFFICIENT_TOKEN_BALANCE` without calldata.
-5. If allowance is insufficient, HTTP 200 returns `status: approval_required`, the exact input amount, token, owner, fixed spender, current allowance, `resetAllowanceFirst` and `transaction: null`. This is guidance only, not an approval transaction. Existing nonzero allowance must be reset and confirmed before increasing it. The future frontend must independently validate the spender and implement explicit wallet approval UX. Obtain a fresh quote after approval confirms.
-6. With sufficient allowance, construct `swapExactTokensForTokens(amountIn, amountOutMin, path, wallet, deadline)`. The minimum is the stricter of the selected quote and refreshed quote minimums; deadline is server time plus 120 seconds. Value is zero and target is always the registered QWAP router.
+5. If allowance is insufficient, HTTP 200 returns `status: approval_required`, the exact input amount, token, owner, selected venue spender, current allowance, `resetAllowanceFirst` and `transaction: null`. This is guidance only, not an approval transaction. Existing nonzero allowance must be reset and confirmed before increasing it. The future frontend must independently validate the spender and implement explicit wallet approval UX. Obtain a fresh quote after approval confirms.
+6. With sufficient allowance, construct `swapExactTokensForTokens(amountIn, amountOutMin, path, wallet, deadline)`. The minimum is the stricter of the selected quote and refreshed quote minimums; deadline is server time plus 120 seconds. Value is zero and target is always the selected venue's registered router.
 7. Decode the exact calldata and compare it to intended parameters. Run sender-specific `eth_call` and `eth_estimateGas` at the refreshed block; reject reverts, invalid output, zero/excessive gas estimates, expiry or a changed block hash.
-8. Only then return `status: prepared` with the unsigned transaction, simulation block/hash, route, output minimum and expiry. Gas limit includes a 20% margin. Decimal strings represent value, gas, amounts and deadlines; a frontend must convert them appropriately for its wallet SDK. Nonce and fee fields are deliberately omitted for the wallet to populate.
+8. Only then return `status: prepared` with the unsigned transaction, simulation block/hash, route, output minimum and expiry. Gas limit includes a 20% margin plus 50,000 gas per V2 hop to cover next-block price-accumulator initialization omitted by same-timestamp simulations. The response exposes this policy separately from estimated gas; unused gas limit is not charged as gas consumed. This is a conservative tested allowance, not a guarantee against all state changes. Decimal strings represent value, gas, amounts and deadlines; a frontend must convert them appropriately for its wallet SDK. Nonce and fee fields are deliberately omitted for the wallet to populate.
 
 ## Operational limits
 
@@ -45,3 +45,5 @@ Preparation admits two concurrent computations per process, has a 30-second resp
 - Test sources remain ignored by Git per the owner's earlier request. Hosted CI will not have these tests until that policy changes.
 
 Reference ABI/source: https://testnet.qmsscan.io/api/v2/smart-contracts/0x93AFF45f28e5DF1b55f5AEFEfB807De843b12619
+
+Multi-venue update: quote IDs also bind the configured router. Refresh, allowance checks, simulation and calldata remain on the selected venue even when another exchange quotes more output. See exchange-comparison.md. Public QMS remains QWAP-only until a Cardinal deployment is verified.

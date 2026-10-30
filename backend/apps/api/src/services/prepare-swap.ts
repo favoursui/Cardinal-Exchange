@@ -35,6 +35,9 @@ function samePath(a: readonly string[], b: readonly string[]) {
 }
 function isUint(n: bigint) { return typeof n === 'bigint' && n >= 0n && n <= MAX_UINT256; }
 export const PREPARE_TIMEOUT_MS = 30_000;
+// A V2 pool can initialize both price accumulators in the next block even if
+// the snapshot simulation skipped that update. Reserve extra gas per hop.
+export const V2_NEXT_BLOCK_GAS_BUFFER = 50_000n;
 export class SwapPreparer {
   private active = 0;
   constructor(private readonly store: QuoteStore, private readonly quotes: Pick<QwapQuotes, 'quote'>,
@@ -59,8 +62,8 @@ export class SwapPreparer {
   }
   private async build(original: ReturnType<QuoteStore['get']>, account: Address, quoteId: string) {
     const started = this.now();
-    const fresh = await this.quotes.quote(original.request);
-    if (fresh.chainId !== CHAIN_ID || fresh.venue !== original.quote.venue ||
+    const fresh = await this.quotes.quote(original.request, original.quote.venue);
+    if (fresh.chainId !== CHAIN_ID || fresh.venue !== original.quote.venue || fresh.router !== original.quote.router ||
       !samePath(fresh.path, original.quote.path) || !samePath(fresh.pools, original.quote.pools)) {
       throw new QuoteError('ROUTE_CHANGED_REQUOTE', 409);
     }
@@ -72,7 +75,7 @@ export class SwapPreparer {
     if (await this.rpc.chainId() !== CHAIN_ID) throw new QuoteError('CHAIN_MISMATCH');
     const values = await Promise.allSettled([
       this.rpc.balance(getAddress(fresh.tokenIn), account, block),
-      this.rpc.allowance(getAddress(fresh.tokenIn), account, QWAP.router, block),
+      this.rpc.allowance(getAddress(fresh.tokenIn), account, fresh.router, block),
     ]);
     const [balance, allowance] = values.map(value => {
       if (value.status === 'rejected') throw value.reason;
@@ -87,13 +90,13 @@ export class SwapPreparer {
     if (allowance < amount) {
       // Instructions only. No approval calldata or unlimited allowance is returned.
       return { status: 'approval_required' as const, quoteId, chainId: CHAIN_ID,
-        token: fresh.tokenIn, owner: account, spender: QWAP.router, amount: amount.toString(),
+        token: fresh.tokenIn, owner: account, spender: fresh.router, amount: amount.toString(),
         currentAllowance: allowance.toString(), resetAllowanceFirst: allowance > 0n,
         refreshQuoteAfterApproval: true, transaction: null };
     }
     const deadline = BigInt(Math.floor(this.now() / 1000) + 120);
     const path = fresh.path.map(address => getAddress(address));
-    const tx: UnsignedSwap = { account, to: QWAP.router, value: 0n,
+    const tx: UnsignedSwap = { account, to: fresh.router, value: 0n,
       data: encodeFunctionData({ abi: swapAbi, functionName: 'swapExactTokensForTokens', args: [amount, minimum, path, account, deadline] }) };
     // Decode the exact payload we will return, rather than relying on UI descriptions.
     const decoded = decodeFunctionData({ abi: swapAbi, data: tx.data });
@@ -118,7 +121,8 @@ export class SwapPreparer {
       minimumAmountOut: minimum.toString(), path, pools: fresh.pools,
       deadline: deadline.toString(), expiresAt: fresh.expiresAt,
       simulation: { blockNumber: fresh.blockNumber, blockHash: fresh.blockHash, gasEstimate: gas.toString() },
-      transaction: { chainId: CHAIN_ID, from: account, to: tx.to, data: tx.data, value: '0', gas: ((gas * 120n + 99n) / 100n).toString() },
+      gasPolicy: { marginBps: 2000, perHopBuffer: V2_NEXT_BLOCK_GAS_BUFFER.toString() },
+      transaction: { chainId: CHAIN_ID, from: account, to: tx.to, data: tx.data, value: '0', gas: ((gas * 120n + 99n) / 100n + V2_NEXT_BLOCK_GAS_BUFFER * BigInt(path.length - 1)).toString() },
     };
   }
 }

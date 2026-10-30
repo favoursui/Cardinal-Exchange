@@ -15,7 +15,8 @@
     "check": "npm run typecheck && npm test && npm run build",
     "audit:dependencies": "npm audit --audit-level=moderate",
     "test:fork": "npm run build && node scripts/test-qwap-fork.mjs",
-    "test:contracts": "node scripts/prepare-amm-artifacts.mjs && forge test --root contracts"
+    "test:contracts": "node scripts/prepare-amm-artifacts.mjs && forge test --root contracts",
+    "test:cardinal-fork": "npm run build && node scripts/test-cardinal-fork.mjs"
   },
   "dependencies": {
     "@fastify/helmet": "13.2.0",

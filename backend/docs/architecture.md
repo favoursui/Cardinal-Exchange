@@ -57,3 +57,7 @@ Unsigned preparation status and remaining execution gates: [transaction preparat
 ## Cardinal AMM evaluation
 
 Unmodified Uniswap V2 core and Router02 artifacts are now pinned and exercised in local Foundry tests. See cardinal-amm.md for bytecode provenance, GPL licensing notes, admin/pause constraints and remaining integration work. This is an evaluated candidate, not a public deployment or production approval.
+
+## Exchange comparison update
+
+Separate registry configurations now drive quote verification and preparation for multiple V2 venues. Comparisons pin a common snapshot, expose per-venue availability and rank output without favoring Cardinal. Quote IDs bind the selected router, and preparation refreshes that venue only. The public server registers QWAP alone; Cardinal registry values exist only in the local-fork harness. See exchange-comparison.md.

@@ -47,3 +47,7 @@ See [transaction preparation](docs/transaction-preparation.md) for the quote-ID 
 ## Cardinal pool prototype
 
 The candidate AMM uses pinned, unmodified Uniswap V2 artifacts. `npm run test:contracts` runs local Foundry unit, fuzz and stateful invariant tests. See [contract setup](contracts/README.md) and [AMM decision/provenance](docs/cardinal-amm.md). No Cardinal pools are deployed publicly or included in live quotes yet.
+
+## Exchange comparison
+
+Quotes now carry separate IDs per venue and are ranked by output before gas. Selected-venue preparation preserves its router and approval spender. Public QMS currently exposes QWAP only; `npm run test:cardinal-fork` exercises separate Cardinal pools alongside QWAP locally. See [comparison behavior and limits](docs/exchange-comparison.md).
