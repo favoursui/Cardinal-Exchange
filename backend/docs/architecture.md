@@ -64,4 +64,4 @@ Separate registry configurations now drive quote verification and preparation fo
 
 ## Pool read update
 
-Registered V2 venues now expose block-pinned reserves and optional wallet LP positions through `GET /v1/pools/:venue`. Public configuration enables QWAP only. Estimates are indicative; add/remove-liquidity preparation remains pending. See [pool positions](pool-positions.md).
+Registered V2 venues now expose block-pinned reserves and optional wallet LP positions through `GET /v1/pools/:venue`. Public configuration enables QWAP only. Estimates are indicative; unsigned withdrawal preparation is now available behind a separate flag; liquidity addition remains pending. See [withdrawal preparation](liquidity-removal.md). See [pool positions](pool-positions.md).

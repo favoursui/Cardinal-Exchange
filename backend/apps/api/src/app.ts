@@ -1,3 +1,5 @@
+import { RemovalPreparer } from './services/prepare-removal.js';
+import type { RemovalRequest } from './services/prepare-removal.js';
 import Fastify, { LogController } from 'fastify';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -11,10 +13,11 @@ import { QuoteStore } from './services/quote-store.js';
 import { SwapPreparer } from './services/prepare-swap.js';
 import type { ExecutionReader } from './services/prepare-swap.js';
 import type { TransactionTracker } from './services/transaction-status.js';
-export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; pools?: readonly Pick<QwapQuotes, 'venueId' | 'pool'>[]; execution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
+export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; pools?: readonly Pick<QwapQuotes, 'venueId' | 'pool'>[]; execution?: ExecutionReader; removalExecution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
   const pools = new Map((options.pools ?? []).map(adapter => [adapter.venueId, adapter]));
   if (pools.size !== (options.pools?.length ?? 0) || pools.size > 4) throw new Error('Invalid pool adapter registry');
   if (options.execution && !options.quotes) throw new Error('Transaction preparation requires quotes');
+  const removal = options.removalExecution ? new RemovalPreparer(options.pools ?? [], options.removalExecution, options.now) : undefined;
   const store = new QuoteStore(options.now);
   const preparer = options.execution && options.quotes ? new SwapPreparer(store, options.quotes, options.execution, options.now) : undefined;
   const app = Fastify({
@@ -81,6 +84,26 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
       return { quotes, coverage: result.coverage, ranking: 'output-before-gas' };
     } catch (error) {
       if (error instanceof QuoteError) return reply.code(error.status).send({ error: error.code, quotes: [] });
+      throw error;
+    }
+  });
+  app.post<{ Body: RemovalRequest }>('/v1/liquidity/remove/prepare', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    schema: { body: {
+      type: 'object', additionalProperties: false,
+      required: ['chainId', 'venue', 'tokenA', 'tokenB', 'liquidity', 'slippageBps', 'wallet'],
+      properties: {
+        chainId: { type: 'integer', const: CHAIN_ID }, venue: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,31}$' },
+        tokenA: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' }, tokenB: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' },
+        wallet: { type: 'string', pattern: '^0x[0-9a-fA-F]{40}$' },
+        liquidity: { type: 'string', pattern: '^[1-9][0-9]{0,77}$' }, slippageBps: { type: 'integer', minimum: 0, maximum: 500 },
+      },
+    } },
+  }, async (request, reply) => {
+    if (!removal) return reply.code(503).send({ error: 'LIQUIDITY_PREPARATION_DISABLED' });
+    try { return await removal.prepare(request.body); }
+    catch (error) {
+      if (error instanceof QuoteError) return reply.code(error.status).send({ error: error.code });
       throw error;
     }
   });

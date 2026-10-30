@@ -1,3 +1,4 @@
+import { createRemovalReader } from '../dist/apps/api/src/services/prepare-removal.js';
 // LOCAL-ONLY integration test: never accepts an external transaction endpoint.
 import assert from 'node:assert/strict';
 import './prepare-amm-artifacts.mjs';
@@ -82,7 +83,7 @@ try {
     wrappedGetter:'WETH',tokens:QWAP.tokens};
   const adapters = [new QwapQuotes(rpc),new QwapQuotes(rpc,Date.now,config)];
   const group = new VenueQuotes(rpc,adapters);
-  app = await buildApp({rateLimitMax:100,quotes:group,pools:adapters,execution:createExecutionReader(client)});
+  app = await buildApp({rateLimitMax:100,quotes:group,pools:adapters,removalExecution:createRemovalReader(client),execution:createExecutionReader(client)});
   const post = async (url,payload) => {
     const result=await app.inject({method:'POST',url,payload});
     assert.equal(result.statusCode,200,result.body);return result.json();
@@ -136,16 +137,30 @@ try {
   const supply = await client.readContract({address:pair,abi:erc20Abi,functionName:'totalSupply',blockNumber:poolBlock});
   assert.equal(poolState.position.estimatedAmount0,(lp*reserves[0]/supply).toString());
   assert.equal(poolState.position.estimatedAmount1,(lp*reserves[1]/supply).toString());
+  const removalRequest = {chainId:19480,venue:'cardinal',tokenA:wrapped,tokenB:usdc,liquidity:lp.toString(),slippageBps:50,wallet:account};
+  const removalApproval = await post('/v1/liquidity/remove/prepare',removalRequest);
+  assert.equal(removalApproval.status,'approval_required');
+  assert.equal(removalApproval.token.toLowerCase(),pair.toLowerCase());
+  assert.equal(removalApproval.spender.toLowerCase(),router.toLowerCase());
+  assert.equal(removalApproval.amount,lp.toString());
   await receipt(await wallet.writeContract({address:pair,abi:erc20Abi,functionName:'approve',args:[router,lp]}));
   const beforeWrapped=await balance(wrapped),beforeUsdc=await balance(usdc);
-  await receipt(await wallet.writeContract({address:router,abi:routerAbi,functionName:'removeLiquidity',args:[wrapped,usdc,lp,0n,0n,account,BigInt(Math.floor(Date.now()/1000)+600)]}));
+  const removal = await post('/v1/liquidity/remove/prepare',removalRequest);
+  assert.equal(removal.status,'prepared');
+  const removalTx = removal.transaction;
+  assert.equal(removalTx.to.toLowerCase(),router.toLowerCase());
+  await receipt(await wallet.sendTransaction({to:removalTx.to,data:removalTx.data,value:BigInt(removalTx.value),gas:BigInt(removalTx.gas)}));
+  const minimumWrapped = removal.token0.address.toLowerCase() === wrapped.toLowerCase() ? removal.minimumAmount0 : removal.minimumAmount1;
+  const minimumUsdc = removal.token0.address.toLowerCase() === usdc.toLowerCase() ? removal.minimumAmount0 : removal.minimumAmount1;
+  assert.ok(await balance(wrapped)-beforeWrapped >= BigInt(minimumWrapped));
+  assert.ok(await balance(usdc)-beforeUsdc >= BigInt(minimumUsdc));
   assert.ok(await balance(wrapped)>beforeWrapped && await balance(usdc)>beforeUsdc);
   assert.equal(await client.readContract({address:pair,abi:erc20Abi,functionName:'balanceOf',args:[account]}),0n);
   const withdrawn = await app.inject(positionUrl);
   assert.equal(withdrawn.statusCode,200,withdrawn.body);
   assert.equal(withdrawn.json().position.lpBalance,'0');
   console.log(JSON.stringify({status:'passed',scope:'localhost fork only',forkBlock:metadata.forkedNetwork.forkBlockNumber,
-    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API'],swaps:results},null,2));
+    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API','simulated unsigned withdrawal API'],swaps:results},null,2));
 } finally {
   if(app) await app.close();
   await client.request({method:'anvil_removeBlockTimestampInterval'});
