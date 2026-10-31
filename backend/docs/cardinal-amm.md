@@ -48,7 +48,7 @@ Both upstream packages declare GPL-3.0-or-later. Their source and license files 
 
 Foundry locally deploys the exact upstream artifacts and checks creation/address derivation, duplicate/invalid pairs, unauthorized fee changes, LP redemption and minimum-liquidity locking, deadline/minimum-output protection and reentrancy rejection. Two fuzz tests cover swap accounting/product growth and deposit-withdraw rounding across 18/6-decimal assets. Three stateful invariants check reserve/balance agreement, LP supply/locked shares, and token conservation through mixed liquidity and swap actions.
 
-These tests use simple test-only tokens and disabled protocol fees. They do not yet cover protocol-fee minting, permit signatures, native wrapping, malicious token variants, MEV/economic attacks or full deployment reproducibility from source. Mainnet requires these reviews where relevant, independent assessment and the mainnet release gates.
+These tests use simple test-only tokens. The original stateful invariants exercise disabled protocol fees; a separate fee-accounting suite now covers enabled fees. Permit signatures, native wrapping in the Foundry harness, malicious token variants, MEV/economic attacks and full deployment reproducibility from source remain outside this coverage. Mainnet requires these reviews where relevant, independent assessment and the mainnet release gates.
 
 ## Next integration milestone
 
@@ -57,3 +57,16 @@ Deploy the candidate factory/router only on an isolated local QMS fork; record d
 ## Adapter integration update
 
 A shared registry-driven V2 adapter and venue comparison service now support Cardinal on the local fork. The local harness deploys the checked artifacts, seeds a distinct pool, compares it with QWAP, and exercises venue-bound swap preparation and LP withdrawal. No public deployment or Cardinal production registry entry has been added. See exchange-comparison.md.
+
+## Protocol-fee accounting verification
+
+The fee suite runs the pinned upstream bytecode with protocol fees enabled in local fixtures only. It checks authority transfer and rejection of the former authority, exact fee-share minting during additions/removals, diluted LP redemption, fee-recipient changes, treasury withdrawal, disabled-fee baseline reset, re-enabling behavior and liquidity changes without swap growth. The fee fuzz test runs 256 combinations of trade size, direction and liquidity action; its square-root oracle uses binary search independently of the upstream implementation.
+
+Operational findings:
+
+- Fees accrue through pool growth but protocol LP shares are minted on liquidity mint/burn actions, not on each swap.
+- Changing the fee recipient before the next liquidity action redirects accrued fee shares to the new recipient.
+- Setting the fee recipient to zero does not immediately reset each pair's growth checkpoint. A subsequent liquidity action while fees are disabled resets it. Turning fees off and back on without such an action preserves the checkpoint, including growth during that interval.
+- Pending protocol shares dilute withdrawals. Reserve-only position estimates cannot be treated as guaranteed redemption outputs.
+
+The full Foundry suite passed 17 tests, including three fuzz tests at 256 runs each and three stateful invariants at 128 runs / 4096 calls each. This does not enable fees in deployment plans or prove mainnet readiness. Admin transitions and fee changes still need explicit governance review. These tests remain under the existing ignored `contracts/test/` directory and therefore will not be included in an ordinary Git commit unless that policy is changed.

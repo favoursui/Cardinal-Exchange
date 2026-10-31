@@ -36,3 +36,7 @@ Test directories remain ignored by Git at the owner's request. Restore them befo
 Unsigned deployment planning is available with `npm run deployment:plan`. It requires explicit Cardinal public addresses, validates pinned bytecode and testnet RPC state, and never signs or broadcasts. See [deployment preparation and Tower research](../docs/testnet-deployment.md). `npm run test:deployment` runs the offline planner tests; these live outside the ignored test directories.
 
 `npm run deployment:verify` checks deployed creation transactions, runtime bytecode and initial contract state against a plan without enabling the public registry. `npm run test:deployment-local` exercises it against a separate localhost Anvil instance on port 18546; see the deployment preparation guide above.
+
+## Fee-accounting coverage
+
+`test/CardinalFeeAccounting.t.sol` adds protocol-fee minting/dilution, authority transfer, recipient changes, fee-toggle checkpoint behavior and treasury redemption tests. The full suite now passes 17 tests; see the AMM decision document for the operational findings. Public deployment plans continue to leave protocol fees disabled. The test directory remains Git-ignored under the current policy.
