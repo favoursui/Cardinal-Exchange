@@ -8,6 +8,10 @@ import type { VenueConfig } from './venue.js';
 
 export const QUOTE_TIMEOUT_MS = 20_000;
 const abi: Abi = parseAbi([
+  'function feeBps() view returns (uint16)',
+  'function treasury() view returns (address)',
+  'function routerCodeHashes(address) view returns (bytes32)',
+  'function tokenCodeHashes(address) view returns (bytes32)',
   'function factory() view returns (address)',
   'function WQMS() view returns (address)',
   'function WETH() view returns (address)',
@@ -72,6 +76,9 @@ export class QwapQuotes {
       !hash.test(config.routerHash) || !hash.test(config.factoryHash) || !['WQMS', 'WETH'].includes(config.wrappedGetter) ||
       config.tokens.length < 2 || config.tokens.length > 32 || config.tokens.some(t => !isAddress(t.address) || same(t.address, zeroAddress) || !hash.test(t.codeHash)) ||
       new Set(config.tokens.map(t => t.address.toLowerCase())).size !== config.tokens.length) throw new Error('Invalid venue configuration');
+    if (config.executor && (!isAddress(config.executor.address) || same(config.executor.address, zeroAddress) ||
+      !isAddress(config.executor.treasury) || same(config.executor.treasury, zeroAddress) || !hash.test(config.executor.codeHash) ||
+      !Number.isInteger(config.executor.feeBps) || config.executor.feeBps < 1 || config.executor.feeBps > 50)) throw new Error('Invalid executor configuration');
     this.config = structuredClone(config);
   }
   get venueId() { return this.config.id; }
@@ -118,6 +125,18 @@ export class QwapQuotes {
     const bridge = this.config.tokens[0]!.address;
     requireCondition(same(factory, this.config.factory) && same(wrapped, bridge), 'CONTRACT_IDENTITY_MISMATCH');
   }
+  private async verifyExecutor(block: Snapshot, tokens: Address[]) {
+    const executor = this.config.executor;
+    if (!executor) return;
+    requireCondition(await this.rpc.codeHash(executor.address, block.number) === executor.codeHash, 'EXECUTOR_IDENTITY_MISMATCH');
+    const read = (method: string, args: readonly unknown[] = []) => this.rpc.read(executor.address, method, args, block.number);
+    const [bps, treasury, routerHash, ...tokenHashes] = await settledGroup([
+      read('feeBps'), read('treasury'), read('routerCodeHashes', [this.config.router]),
+      ...tokens.map(token => read('tokenCodeHashes', [token])),
+    ]);
+    requireCondition(bps === executor.feeBps && same(treasury, executor.treasury) && routerHash === this.config.routerHash &&
+      tokenHashes.every((hash, i) => hash === this.config.tokens.find(t => same(t.address, tokens[i]!))?.codeHash), 'EXECUTOR_CONFIG_MISMATCH');
+  }
   async walletToken(tokenAddress: string, wallet: string) {
     const token = this.config.tokens.find(t => same(t.address, tokenAddress));
     if (!token) throw new QuoteError('UNSUPPORTED_TOKEN', 422);
@@ -142,16 +161,20 @@ export class QwapQuotes {
     const age = BigInt(Math.floor(this.now() / 1000)) - block.timestamp;
     requireCondition(age >= -15n && age <= 120n, 'STALE_BLOCK');
     await this.verifyIdentity(token.address, token.address, block);
-    const [balance, allowance] = await settledGroup([
+    await this.verifyExecutor(block, [token.address]);
+    const swapSpender = this.config.executor?.address ?? this.config.router;
+    const [balance, allowance, swapAllowance] = await settledGroup([
       this.rpc.read(token.address, 'balanceOf', [wallet], block.number),
       this.rpc.read(token.address, 'allowance', [wallet, this.config.router], block.number),
+      this.rpc.read(token.address, 'allowance', [wallet, swapSpender], block.number),
     ]);
-    requireCondition(uint(balance) && uint(allowance), 'INVALID_WALLET_STATE');
+    requireCondition(uint(balance) && uint(allowance) && uint(swapAllowance), 'INVALID_WALLET_STATE');
     requireCondition((await this.rpc.block(block.number)).hash === block.hash, 'BLOCK_REORG');
     requireCondition(this.now() - started < QUOTE_TIMEOUT_MS, 'WALLET_READ_TIMEOUT');
     return { chainId: CHAIN_ID, venue: this.config.id, wallet,
       token: { address: token.address, symbol: token.symbol, decimals: token.decimals },
       spender: this.config.router, balance: balance.toString(), allowance: allowance.toString(),
+      swapSpender, swapAllowance: swapAllowance.toString(),
       blockNumber: block.number.toString(), blockHash: block.hash, observedAt: new Date(this.now()).toISOString(),
     };
   }
@@ -226,7 +249,11 @@ export class QwapQuotes {
     if (!same(input.address, bridge) && !same(output.address, bridge)) {
       paths.push([input.address, bridge, output.address]);
     }
-    const amountIn = BigInt(request.amountIn);
+    const gross = BigInt(request.amountIn);
+    const executor = this.config.executor;
+    const fee = executor ? gross * BigInt(executor.feeBps) / 10000n : 0n;
+    const amountIn = gross - fee;
+    await this.verifyExecutor(block, [...new Set(paths.flat())]);
     const results = await Promise.allSettled(paths.map(async path => {
       const hops = await settledGroup(path.slice(0, -1).map(async (from, index) => {
         const to = path[index + 1]!;
@@ -249,7 +276,7 @@ export class QwapQuotes {
       const amounts = await read(this.config.router, 'getAmountsOut', [amountIn, path]);
       requireCondition(Array.isArray(amounts) && amounts.length === path.length && amounts[0] === amountIn, 'INVALID_QUOTE');
       let expected = amountIn;
-      let spotNumerator = amountIn;
+      let spotNumerator = gross;
       let spotDenominator = 1n;
       for (const [index, hop] of hops.entries()) {
         expected = expected * 997n * hop.reserveOut / (hop.reserveIn * 1000n + expected * 997n);
@@ -283,6 +310,8 @@ export class QwapQuotes {
     return {
       venue: this.config.id, venueName: this.config.name, router: this.config.router, chainId: CHAIN_ID,
       tokenIn: input.address, tokenOut: output.address,
+      ...(executor ? { cardinalFee: { executor: executor.address, codeHash: executor.codeHash, treasury: executor.treasury,
+        bps: executor.feeBps, token: input.address, amount: fee.toString(), netAmountIn: amountIn.toString(), collection: 'input' as const } } : {}),
       amountIn: request.amountIn, amountOut: expected.toString(), minimumAmountOut: minimum.toString(),
       slippageBps: request.slippageBps, path: best.path,
       pool: best.hops.length === 1 ? best.hops[0]!.pool : null,

@@ -40,3 +40,7 @@ Unsigned deployment planning is available with `npm run deployment:plan`. It req
 ## Fee-accounting coverage
 
 `test/CardinalFeeAccounting.t.sol` adds protocol-fee minting/dilution, authority transfer, recipient changes, fee-toggle checkpoint behavior and treasury redemption tests. The full suite now passes 17 tests; see the AMM decision document for the operational findings. Public deployment plans continue to leave protocol fees disabled. The test directory remains Git-ignored under the current policy.
+
+## Experimental fee executor
+
+`src/CardinalSwapExecutor.sol` is new Cardinal contract code, separate from unmodified upstream AMM contracts. It collects an immutable input-token fee when forwarding allowlisted swaps. It has not been audited or publicly deployed. Build using `npm run build:contracts`; see [fee flow, tests and release gates](../docs/swap-executor.md).

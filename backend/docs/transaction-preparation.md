@@ -55,3 +55,7 @@ Swap approval instructions now require the same final canonical block-hash check
 Preparation explicitly binds both the cached and refreshed quote to the original request's token pair, input amount and slippage. It checks route endpoints/hop count, positive uint256 output values and the adapter's floor-rounded minimum-output calculation. A malformed refreshed quote fails before wallet balance or allowance reads. The stronger of the original and refreshed minimums remains the transaction minimum.
 
 Malformed, future, expired or overlong refreshed quote time windows are rejected, rather than relying on JavaScript comparisons against an invalid date. The adapter uses a single clock sample for its quote timestamp and 15-second expiry. The quote store refuses malformed or already-expired expiry values. These are additional internal validation boundaries; they do not replace wallet review, contract enforcement or independent security assessment.
+
+## Optional fee executor
+
+A verified server-side venue configuration may select Cardinal's experimental fee executor. Quotes disclose the input fee and net amount; preparation binds those terms, requests gross approval to the executor, and simulates the downstream net swap. The public registry remains direct-router. See [executor behavior and limitations](swap-executor.md).

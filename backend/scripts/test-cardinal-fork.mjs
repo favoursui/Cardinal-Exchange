@@ -1,3 +1,4 @@
+import { QWAP_VENUE } from '../dist/apps/api/src/adapters/venue.js';
 import { createAdditionReader } from '../dist/apps/api/src/services/prepare-addition.js';
 import { createRemovalReader } from '../dist/apps/api/src/services/prepare-removal.js';
 // LOCAL-ONLY integration test: never accepts an external transaction endpoint.
@@ -26,6 +27,7 @@ const account = getAddress(accounts[0]);
 const wallet = createWalletClient({ chain, account, transport: http(url, { timeout: 60000, retryCount: 0 }) });
 const snapshot = await client.request({ method: 'evm_snapshot' });
 let app;
+let report;
 const receipt = async hash => {
   const result = await client.waitForTransactionReceipt({ hash, timeout: 60000, pollingInterval: 100 });
   if (result.status !== 'success') {
@@ -82,7 +84,16 @@ try {
   const config = {id:'cardinal',name:'Cardinal',router,factory,
     routerHash:keccak256(await client.getCode({address:router})),factoryHash:keccak256(await client.getCode({address:factory})),
     wrappedGetter:'WETH',tokens:QWAP.tokens};
-  const adapters = [new QwapQuotes(rpc),new QwapQuotes(rpc,Date.now,config)];
+  // Fee execution exists only on this localhost fork; public registry stays direct.
+  const executorArtifact = JSON.parse(readFileSync(new URL('../contracts/out/CardinalSwapExecutor.sol/CardinalSwapExecutor.json', import.meta.url)));
+  assert.equal(executorArtifact.metadata.sources['src/CardinalSwapExecutor.sol'].keccak256,keccak256(readFileSync(new URL('../contracts/src/CardinalSwapExecutor.sol',import.meta.url))),'Rebuild executor artifact after source changes');
+  const treasury = getAddress(accounts[1]);
+  const executorDeployment = await receipt(await wallet.deployContract({abi:executorArtifact.abi,bytecode:executorArtifact.bytecode.object,
+    args:[treasury,10,[QWAP.router],QWAP.tokens.map(token=>token.address)]}));
+  const executor = executorDeployment.contractAddress;
+  assert.ok(executor);
+  const feeConfig = {...QWAP_VENUE,executor:{address:executor,codeHash:keccak256(await client.getCode({address:executor})),treasury,feeBps:10}};
+  const adapters = [new QwapQuotes(rpc,Date.now,feeConfig),new QwapQuotes(rpc,Date.now,config)];
   const group = new VenueQuotes(rpc,adapters);
   app = await buildApp({rateLimitMax:100,quotes:group,pools:adapters,wallets:adapters,removalExecution:createRemovalReader(client),additionExecution:createAdditionReader(client),execution:createExecutionReader(client)});
   const post = async (url,payload) => {
@@ -100,17 +111,19 @@ try {
     assert.equal(response.quotes[0].bestAvailablePrice,true);
     let selected=response.quotes.find(q=>q.venue===venue);
     const expectedRouter=venue==='cardinal'?router:QWAP.router;
+    const expectedSpender=venue==='cardinal'?router:executor;
+    const treasuryBefore=await client.readContract({address:wrapped,abi:erc20Abi,functionName:'balanceOf',args:[treasury]});
     const approval=await post('/v1/transactions/prepare',{quoteId:selected.quoteId,wallet:account});
     assert.equal(approval.status,'approval_required');
-    assert.equal(approval.spender.toLowerCase(),expectedRouter.toLowerCase());
+    assert.equal(approval.spender.toLowerCase(),expectedSpender.toLowerCase());
     assert.equal(approval.amount,request.amountIn);
-    await receipt(await wallet.writeContract({address:wrapped,abi:erc20Abi,functionName:'approve',args:[expectedRouter,BigInt(request.amountIn)]}));
+    await receipt(await wallet.writeContract({address:wrapped,abi:erc20Abi,functionName:'approve',args:[expectedSpender,BigInt(request.amountIn)]}));
     response=await post('/v1/quotes',request);
     selected=response.quotes.find(q=>q.venue===venue);
     const prepared=await post('/v1/transactions/prepare',{quoteId:selected.quoteId,wallet:account});
     assert.equal(prepared.status,'prepared');
     assert.equal(prepared.venue,venue);
-    assert.equal(prepared.transaction.to.toLowerCase(),expectedRouter.toLowerCase());
+    assert.equal(prepared.transaction.to.toLowerCase(),expectedSpender.toLowerCase());
     const before=await balance(usdc);
     const tx=prepared.transaction;
     if (venue === 'cardinal') {
@@ -120,8 +133,15 @@ try {
     await receipt(await wallet.sendTransaction({to:tx.to,data:tx.data,value:BigInt(tx.value),gas:BigInt(tx.gas)}));
     const received=await balance(usdc)-before;
     assert.ok(received>=BigInt(prepared.minimumAmountOut));
-    assert.equal(await client.readContract({address:wrapped,abi:erc20Abi,functionName:'allowance',args:[account,expectedRouter]}),0n);
-    results.push({selectedVenue:venue,router:expectedRouter,received:received.toString()});
+    assert.equal(await client.readContract({address:wrapped,abi:erc20Abi,functionName:'allowance',args:[account,expectedSpender]}),0n);
+    const feePaid=await client.readContract({address:wrapped,abi:erc20Abi,functionName:'balanceOf',args:[treasury]})-treasuryBefore;
+    assert.equal(feePaid,venue==='qwap'?BigInt(request.amountIn)*10n/10000n:0n);
+    if(venue==='qwap') {
+      assert.equal(prepared.cardinalFee.amount,feePaid.toString());
+      assert.equal(await client.readContract({address:wrapped,abi:erc20Abi,functionName:'balanceOf',args:[executor]}),0n);
+      assert.equal(await client.readContract({address:wrapped,abi:erc20Abi,functionName:'allowance',args:[executor,QWAP.router]}),0n);
+    }
+    results.push({selectedVenue:venue,router:expectedRouter,received:received.toString(),cardinalFeePaid:feePaid.toString()});
   }
   // Add to the seeded pool through the exact unsigned API transaction.
   const lpBeforeDeposit = await client.readContract({address:pair,abi:erc20Abi,functionName:'balanceOf',args:[account]});
@@ -199,10 +219,12 @@ try {
   const withdrawn = await app.inject(positionUrl);
   assert.equal(withdrawn.statusCode,200,withdrawn.body);
   assert.equal(withdrawn.json().position.lpBalance,'0');
-  console.log(JSON.stringify({status:'passed',scope:'localhost fork only',forkBlock:metadata.forkedNetwork.forkBlockNumber,
-    localDeployment:{factory,router,pair},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API','simulated unsigned withdrawal API','simulated unsigned deposit API','deposit caps and remaining allowances','venue-bound wallet balances and allowances'],swaps:results},null,2));
+  report = {status:'passed',scope:'localhost fork only',forkBlock:metadata.forkedNetwork.forkBlockNumber,
+    localDeployment:{factory,router,pair,executor,treasury},checks:['separate Cardinal pools','real WQMS and USDC liquidity','same-block exchange quotes','price ranking without Cardinal preference','selected-venue approvals','selected-venue simulation and swaps','LP withdrawal','block-pinned LP position API','simulated unsigned withdrawal API','simulated unsigned deposit API','deposit caps and remaining allowances','venue-bound wallet balances and allowances','QWAP executor input fee to treasury','no retained executor funds or router approval'],swaps:results};
 } finally {
   if(app) await app.close();
   await client.request({method:'anvil_removeBlockTimestampInterval'});
   assert.equal(await client.request({method:'evm_revert',params:[snapshot]}),true,'Restore local fork');
 }
+
+console.log(JSON.stringify(report,null,2));

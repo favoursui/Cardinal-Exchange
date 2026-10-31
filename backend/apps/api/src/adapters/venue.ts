@@ -8,6 +8,7 @@ export interface VenueConfig {
   routerHash: Hex;
   factoryHash: Hex;
   wrappedGetter: 'WQMS' | 'WETH';
+  executor?: { address: Address; codeHash: Hex; treasury: Address; feeBps: number };
   tokens: readonly { address: Address; symbol: string; decimals: number; codeHash: Hex }[];
 }
 export const QWAP_VENUE: VenueConfig = {

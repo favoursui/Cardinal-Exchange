@@ -7,6 +7,7 @@ import type { QwapQuotes } from '../adapters/qwap.js';
 import { QuoteStore } from './quote-store.js';
 
 export const swapAbi = parseAbi(['function swapExactTokensForTokens(uint256 amountIn,uint256 amountOutMin,address[] path,address to,uint256 deadline) returns (uint256[] amounts)']);
+export const executorAbi = parseAbi(['function swap(address router,uint256 amountIn,uint256 minimumOut,address[] path,uint256 deadline) returns (uint256[] amounts)']);
 export interface UnsignedSwap { account: Address; to: Address; data: Hex; value: bigint }
 export interface ExecutionReader {
   chainId(): Promise<number>;
@@ -64,6 +65,7 @@ export class SwapPreparer {
     const started = this.now();
     const fresh = await this.quotes.quote(original.request, original.quote.venue);
     if (fresh.chainId !== CHAIN_ID || fresh.venue !== original.quote.venue || fresh.router !== original.quote.router ||
+      JSON.stringify(fresh.cardinalFee) !== JSON.stringify(original.quote.cardinalFee) ||
       !samePath(fresh.path, original.quote.path) || !samePath(fresh.pools, original.quote.pools)) {
       throw new QuoteError('ROUTE_CHANGED_REQUOTE', 409);
     }
@@ -87,11 +89,22 @@ export class SwapPreparer {
     }
     const minimum = BigInt(fresh.minimumAmountOut) > originalMinimum ? BigInt(fresh.minimumAmountOut) : originalMinimum;
     const amount = BigInt(original.request.amountIn);
+    const fee = fresh.cardinalFee;
+    let swapAmount = amount;
+    const spender = fee?.executor ?? fresh.router;
+    if (fee) {
+      if (!Number.isInteger(fee.bps) || fee.bps < 1 || fee.bps > 50 || fee.collection !== 'input' ||
+        getAddress(fee.executor) === zeroAddress || getAddress(fee.treasury) === zeroAddress ||
+        fee.token.toLowerCase() !== fresh.tokenIn.toLowerCase() ||
+        !/^[0-9]+$/.test(fee.amount) || !/^[1-9][0-9]*$/.test(fee.netAmountIn) ||
+        BigInt(fee.amount) !== amount * BigInt(fee.bps) / 10000n || BigInt(fee.netAmountIn) !== amount - BigInt(fee.amount)) throw new QuoteError('QUOTE_INTENT_MISMATCH', 409);
+      swapAmount = BigInt(fee.netAmountIn);
+    }
     const block = BigInt(fresh.blockNumber);
     if (await this.rpc.chainId() !== CHAIN_ID) throw new QuoteError('CHAIN_MISMATCH');
     const values = await Promise.allSettled([
       this.rpc.balance(getAddress(fresh.tokenIn), account, block),
-      this.rpc.allowance(getAddress(fresh.tokenIn), account, fresh.router, block),
+      this.rpc.allowance(getAddress(fresh.tokenIn), account, spender, block),
     ]);
     const [balance, allowance] = values.map(value => {
       if (value.status === 'rejected') throw value.reason;
@@ -110,18 +123,27 @@ export class SwapPreparer {
       ensureFresh();
       // Instructions only. No approval calldata or unlimited allowance is returned.
       return { status: 'approval_required' as const, quoteId, venue: fresh.venue, chainId: CHAIN_ID,
-        token: fresh.tokenIn, owner: account, spender: fresh.router, amount: amount.toString(),
+        ...(fee ? { cardinalFee: fee } : {}),
+        token: fresh.tokenIn, owner: account, spender, amount: amount.toString(),
         currentAllowance: allowance.toString(), resetAllowanceFirst: allowance > 0n,
         refreshQuoteAfterApproval: true, transaction: null };
     }
     const deadline = BigInt(Math.floor(this.now() / 1000) + 120);
     const path = fresh.path.map(address => getAddress(address));
-    const tx: UnsignedSwap = { account, to: fresh.router, value: 0n,
-      data: encodeFunctionData({ abi: swapAbi, functionName: 'swapExactTokensForTokens', args: [amount, minimum, path, account, deadline] }) };
-    // Decode the exact payload we will return, rather than relying on UI descriptions.
-    const decoded = decodeFunctionData({ abi: swapAbi, data: tx.data });
-    if (decoded.functionName !== 'swapExactTokensForTokens' || decoded.args[0] !== amount || decoded.args[1] !== minimum ||
-      !samePath(decoded.args[2], original.quote.path) || decoded.args[3] !== account || decoded.args[4] !== deadline) throw new QuoteError('TRANSACTION_INTENT_MISMATCH');
+    const tx: UnsignedSwap = { account, to: spender, value: 0n,
+      data: fee
+        ? encodeFunctionData({ abi: executorAbi, functionName: 'swap', args: [fresh.router, amount, minimum, path, deadline] })
+        : encodeFunctionData({ abi: swapAbi, functionName: 'swapExactTokensForTokens', args: [amount, minimum, path, account, deadline] }) };
+    // Decode the exact payload, including the selected downstream router.
+    if (fee) {
+      const decoded = decodeFunctionData({ abi: executorAbi, data: tx.data });
+      if (decoded.functionName !== 'swap' || decoded.args[0].toLowerCase() !== fresh.router.toLowerCase() || decoded.args[1] !== amount ||
+        decoded.args[2] !== minimum || !samePath(decoded.args[3], original.quote.path) || decoded.args[4] !== deadline) throw new QuoteError('TRANSACTION_INTENT_MISMATCH');
+    } else {
+      const decoded = decodeFunctionData({ abi: swapAbi, data: tx.data });
+      if (decoded.functionName !== 'swapExactTokensForTokens' || decoded.args[0] !== amount || decoded.args[1] !== minimum ||
+        !samePath(decoded.args[2], original.quote.path) || decoded.args[3] !== account || decoded.args[4] !== deadline) throw new QuoteError('TRANSACTION_INTENT_MISMATCH');
+    }
     let simulated: readonly bigint[];
     let gas: bigint;
     try {
@@ -130,13 +152,14 @@ export class SwapPreparer {
       if (call.status === 'rejected' || estimate.status === 'rejected') throw new Error('Simulation failed');
       simulated = call.value; gas = estimate.value;
     } catch { throw new QuoteError('SIMULATION_FAILED', 422); }
-    if (simulated.length !== path.length || simulated[0] !== amount || simulated.some(n => !isUint(n) || n === 0n) ||
+    if (simulated.length !== path.length || simulated[0] !== swapAmount || simulated.some(n => !isUint(n) || n === 0n) ||
       simulated.at(-1) !== BigInt(fresh.amountOut) || simulated.at(-1)! < minimum || !isUint(gas) || gas === 0n || gas > 5_000_000n) {
       throw new QuoteError('INVALID_SIMULATION');
     }
     if (await this.rpc.blockHash(block) !== fresh.blockHash) throw new QuoteError('BLOCK_REORG');
     ensureFresh();
     return { status: 'prepared' as const, quoteId, venue: fresh.venue, chainId: CHAIN_ID,
+      ...(fee ? { cardinalFee: fee } : {}),
       recipient: account, amountIn: amount.toString(), quotedAmountOut: fresh.amountOut,
       minimumAmountOut: minimum.toString(), path, pools: fresh.pools,
       deadline: deadline.toString(), expiresAt: fresh.expiresAt,

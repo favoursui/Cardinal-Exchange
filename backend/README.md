@@ -67,3 +67,7 @@ Read a registered pool and optional wallet LP position with `GET /v1/pools/:venu
 ## Wallet balances
 
 `GET /v1/wallets/:wallet/:venue?token=<address>` returns a registered token balance and allowance for that venue's router at one verified block. Enabled with the quote flag. See [wallet balances](docs/wallet-balances.md).
+
+## Cardinal swap fees
+
+An experimental [swap executor](docs/swap-executor.md) now supports an explicit input-token fee for registered V2 routes. Quotes and unsigned preparation account for the fee and executor spender. The local fork uses 0.10% for QWAP; the public server still uses direct QWAP execution with no Cardinal fee.

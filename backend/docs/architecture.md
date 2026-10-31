@@ -73,3 +73,7 @@ Registered V2 venues now expose block-pinned reserves and optional wallet LP pos
 ## Wallet reads
 
 Registered venues expose single-token balances and router allowances at a verified snapshot via `GET /v1/wallets/:wallet/:venue?token=<address>`. See [wallet balances](wallet-balances.md). These observations do not reserve funds or replace transaction preparation.
+
+## Fee executor update
+
+An experimental immutable Cardinal executor now supports fees on external V2 routes. A reviewed venue configuration can select it; quotes disclose gross input, fee and net input, and preparation approves/simulates the executor while preserving the selected downstream router. The backend remains non-signing. The executor briefly holds input during atomic execution; it sends swap output directly to the caller and the fee to its immutable treasury. This adds a new on-chain trust boundary requiring independent review. The public registry remains direct-router with no Cardinal fee. See [executor design and limitations](swap-executor.md).

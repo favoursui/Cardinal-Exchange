@@ -20,3 +20,7 @@ Assets: user funds, LP deposits, allowances, transaction intent, quote integrity
 | Information leakage | No request-body logging, sanitized error responses, header redaction | Implemented baseline; deployment review still required |
 
 Do not treat a simulated transaction as a guarantee: state can change before inclusion. Neither an audit nor a test suite proves absence of vulnerabilities. Update this model when adding adapters, approvals, permits, contracts or administrative privileges.
+
+## Experimental executor boundary
+
+The optional fee executor pulls only the caller's input, restricts token/router runtime identities and paths, fixes output to the caller, enforces minimum output/deadline, clears exact router approval, and uses a reentrancy guard. Tests cover rollback of successful router effects when fee transfer fails, transfer-tax rejection, fee arithmetic and donated-input preservation. Treasury, fee and allowlists are immutable; no arbitrary calls, sweep, upgrade or pause controls exist. Runtime identity does not detect changed proxy implementation/storage. The executor is new unaudited code; public deployment and registry enablement remain pending. See swap-executor.md for frontend disclosure and release requirements.

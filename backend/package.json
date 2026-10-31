@@ -20,7 +20,8 @@
     "deployment:plan": "npm run build && node scripts/plan-testnet-deployment.mjs",
     "test:deployment": "node --test scripts/deployment-plan.test.mjs scripts/verify-deployment.test.mjs",
     "deployment:verify": "npm run build && node scripts/verify-testnet-deployment.mjs",
-    "test:deployment-local": "node scripts/test-deployment-local.mjs"
+    "test:deployment-local": "node scripts/test-deployment-local.mjs",
+    "build:contracts": "node scripts/prepare-amm-artifacts.mjs && forge build --root contracts"
   },
   "dependencies": {
     "@fastify/helmet": "13.2.0",
