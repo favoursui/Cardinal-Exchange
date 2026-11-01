@@ -1,8 +1,8 @@
+import { QWAP } from './qwap-registry.js';
 import { createPublicClient, http, isAddress, keccak256, parseAbi, zeroAddress } from 'viem';
 import type { Abi, Address, Hex, PublicClient } from 'viem';
 import { CHAIN_ID, MAX_UINT256, validateQuote } from '../../../../packages/core/src/quote.js';
 import type { QuoteRequest } from '../../../../packages/core/src/quote.js';
-import { QWAP } from './qwap-registry.js';
 import { QWAP_VENUE } from './venue.js';
 import type { VenueConfig } from './venue.js';
 

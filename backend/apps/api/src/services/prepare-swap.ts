@@ -1,7 +1,7 @@
-import { createPublicClient, decodeFunctionData, decodeFunctionResult, encodeFunctionData, erc20Abi, getAddress, http, parseAbi, zeroAddress } from 'viem';
+import { QWAP } from '../adapters/qwap-registry.js';
+import { createPublicClient, http, decodeFunctionData, decodeFunctionResult, encodeFunctionData, erc20Abi, getAddress, parseAbi, zeroAddress } from 'viem';
 import type { Address, Hex, PublicClient } from 'viem';
 import { CHAIN_ID, MAX_UINT256 } from '../../../../packages/core/src/quote.js';
-import { QWAP } from '../adapters/qwap-registry.js';
 import { QuoteError } from '../adapters/qwap.js';
 import type { QwapQuotes } from '../adapters/qwap.js';
 import { QuoteStore } from './quote-store.js';

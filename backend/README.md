@@ -6,7 +6,7 @@ This is not a functioning exchange or a mainnet-ready release. A read-only QWAP 
 
 ## Run locally
 
-Use Node.js 22 and npm. Run `npm ci`, then `npm run dev`. The API binds to 127.0.0.1:3001. Set PORT through the process environment to change it; .env files are not automatically loaded. Never provide private keys.
+Use Node.js 22 and npm. Run `npm ci`, then `npm run dev`. The API binds to 127.0.0.1:3001. Set PORT through the process environment or `.env` to change it. `npm run dev` and `npm start` load `.env` when present; existing process environment variables take precedence. Never provide private keys.
 
 `npm run check` runs strict type checking, security-boundary tests and compilation. `npm start` runs the compiled API after a build. `npm run audit:dependencies` checks dependency advisories using the npm registry; it is not a code audit.
 
@@ -71,3 +71,7 @@ Read a registered pool and optional wallet LP position with `GET /v1/pools/:venu
 ## Cardinal swap fees
 
 An experimental [swap executor](docs/swap-executor.md) now supports an explicit input-token fee for registered V2 routes. Quotes and unsigned preparation account for the fee and executor spender. The local fork uses 0.10% for QWAP; the public server still uses direct QWAP execution with no Cardinal fee.
+
+## Server network settings
+
+Set `QMS_RPC_URL` and `QMS_CHAIN_ID` in the ignored `.env`. The example uses the public QMS RPC and chain `19480`; private provider URLs belong only in `.env` or deployment secrets. The server shares the configured RPC across all readers and checks its chain before listening. Other chain IDs are rejected because contract registries remain testnet-specific. When unset, settings default to the existing public testnet configuration. Deployment planning scripts also honor QMS_RPC_URL when provided in their process environment.

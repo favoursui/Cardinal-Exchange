@@ -1,7 +1,9 @@
+import { readNetworkConfig } from '../config/network.js';
+
 // Observed runtime hashes, not an audit or authorization to spend tokens.
 // Evidence and provenance: docs/qwap-integration.md.
 export const QWAP = {
-  rpcUrl: 'https://rpc.testnet.qms.finance',
+  get rpcUrl() { return readNetworkConfig().rpcUrl; },
   router: '0x93AFF45f28e5DF1b55f5AEFEfB807De843b12619',
   factory: '0x93AFD9aC50822F82c7C4f2Ec8Ec2463b086Fb878',
   routerHash: '0x73072957ed723c68ced357f23c146995405d722c80f8c0410e8cd333a263e083',

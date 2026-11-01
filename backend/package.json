@@ -7,9 +7,9 @@
     "node": ">=22 <23"
   },
   "scripts": {
-    "dev": "tsx watch apps/api/src/server.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch apps/api/src/server.ts",
     "build": "tsc",
-    "start": "node dist/apps/api/src/server.js",
+    "start": "node --env-file-if-exists=.env dist/apps/api/src/server.js",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test apps/api/test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build && npm run test:deployment",
