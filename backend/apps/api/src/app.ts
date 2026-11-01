@@ -4,6 +4,8 @@ import { RemovalPreparer } from './services/prepare-removal.js';
 import type { RemovalRequest } from './services/prepare-removal.js';
 import Fastify, { LogController } from 'fastify';
 import helmet from '@fastify/helmet';
+import cors from '@fastify/cors';
+import { parseCorsOrigin } from './config/cors.js';
 import rateLimit from '@fastify/rate-limit';
 import { CHAIN_ID, validateQuote } from '../../../packages/core/src/quote.js';
 import type { QuoteRequest } from '../../../packages/core/src/quote.js';
@@ -15,7 +17,8 @@ import { QuoteStore } from './services/quote-store.js';
 import { SwapPreparer } from './services/prepare-swap.js';
 import type { ExecutionReader } from './services/prepare-swap.js';
 import type { TransactionTracker } from './services/transaction-status.js';
-export async function buildApp(options: { logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; wallets?: readonly Pick<QwapQuotes, 'venueId' | 'walletToken'>[]; pools?: readonly Pick<QwapQuotes, 'venueId' | 'pool'>[]; execution?: ExecutionReader; removalExecution?: ExecutionReader; additionExecution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
+export async function buildApp(options: { corsOrigin?: string; logger?: boolean; rateLimitMax?: number; quotes?: QuoteSource; wallets?: readonly Pick<QwapQuotes, 'venueId' | 'walletToken'>[]; pools?: readonly Pick<QwapQuotes, 'venueId' | 'pool'>[]; execution?: ExecutionReader; removalExecution?: ExecutionReader; additionExecution?: ExecutionReader; tracker?: TransactionTracker; now?: () => number } = {}) {
+  const corsOrigin = parseCorsOrigin(options.corsOrigin);
   const wallets = new Map((options.wallets ?? []).map(adapter => [adapter.venueId, adapter]));
   if (wallets.size !== (options.wallets?.length ?? 0) || wallets.size > 4) throw new Error('Invalid wallet adapter registry');
   const pools = new Map((options.pools ?? []).map(adapter => [adapter.venueId, adapter]));
@@ -56,6 +59,7 @@ export async function buildApp(options: { logger?: boolean; rateLimitMax?: numbe
   });
   await app.register(helmet);
   await app.register(rateLimit, { max: options.rateLimitMax ?? 60, timeWindow: '1 minute' });
+  await app.register(cors, { origin: corsOrigin ?? false, methods: ['GET', 'POST'], allowedHeaders: ['Content-Type'], credentials: false, strictPreflight: true });
   app.addHook('onSend', async (_request, reply) => { reply.header('Cache-Control', 'no-store'); });
   app.setErrorHandler((error, request, reply) => {
     const err = error as { statusCode?: number };

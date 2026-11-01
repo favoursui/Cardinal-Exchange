@@ -75,3 +75,5 @@ An experimental [swap executor](docs/swap-executor.md) now supports an explicit 
 ## Server network settings
 
 Set `QMS_RPC_URL` and `QMS_CHAIN_ID` in the ignored `.env`. The example uses the public QMS RPC and chain `19480`; private provider URLs belong only in `.env` or deployment secrets. The server shares the configured RPC across all readers and checks its chain before listening. Other chain IDs are rejected because contract registries remain testnet-specific. When unset, settings default to the existing public testnet configuration. Deployment planning scripts also honor QMS_RPC_URL when provided in their process environment.
+
+Set `CORS_ORIGIN` to the exact frontend origin, for example `https://app.example.com` or `http://localhost:3000` (no trailing slash or path). Blank or unset disables cross-origin browser access. Only GET/POST and the Content-Type request header are allowed; cookie credentials are disabled. CORS does not authenticate requests or restrict non-browser clients.

@@ -9,8 +9,23 @@ export const QWAP = {
   routerHash: '0x73072957ed723c68ced357f23c146995405d722c80f8c0410e8cd333a263e083',
   factoryHash: '0x224c23047e89f999c9f99c70c9646c999756adae084f95f8f9767bdf7f1e1f5d',
   tokens: [
-    { address: '0x9AA510295aC664A3d5A3182a3eFe959DE2B12c34', symbol: 'WQMS', decimals: 18, codeHash: '0x202001f48dc337a326d9a0a92e6e610a4f965257b38bf6e6edcd84aa9706c4e6' },
-    { address: '0xDd4D61DF875cc613E1372c78827a5F4C2741bf11', symbol: 'USDC', decimals: 6, codeHash: '0xe99aaea4db88aa9d18971c706ee57aa91099d04dcb126f16f3ca9f8a96fc44b5' },
-    { address: '0x43D7c8434A5290a32C8725224870ad6f85132a31', symbol: 'WETH', decimals: 18, codeHash: '0xf65bf38c6b28cc34a99a88a4a62763c6811aa0750e99d6eb829e79cf913dc830' },
+    {
+      address: '0x9AA510295aC664A3d5A3182a3eFe959DE2B12c34',
+      symbol: 'WQMS',
+      decimals: 18,
+      codeHash: '0x202001f48dc337a326d9a0a92e6e610a4f965257b38bf6e6edcd84aa9706c4e6',
+    },
+    {
+      address: '0xDd4D61DF875cc613E1372c78827a5F4C2741bf11',
+      symbol: 'USDC',
+      decimals: 6,
+      codeHash: '0xe99aaea4db88aa9d18971c706ee57aa91099d04dcb126f16f3ca9f8a96fc44b5',
+    },
+    {
+      address: '0x43D7c8434A5290a32C8725224870ad6f85132a31',
+      symbol: 'WETH',
+      decimals: 18,
+      codeHash: '0xf65bf38c6b28cc34a99a88a4a62763c6811aa0750e99d6eb829e79cf913dc830',
+    },
   ],
 } as const;

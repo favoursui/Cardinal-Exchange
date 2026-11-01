@@ -29,7 +29,7 @@ async function start() {
   await verifyConfiguredChain(rpcClient, network.chainId);
   const quoteReader = createQwapReader(rpcClient);
   const qwap = new QwapQuotes(quoteReader);
-  const app = await buildApp({ logger: true,
+  const app = await buildApp({ logger: true, corsOrigin: process.env.CORS_ORIGIN ?? '',
     ...(process.env.LIQUIDITY_PREPARATION_ENABLED === 'true' ? { removalExecution: createRemovalReader(rpcClient), additionExecution: createAdditionReader(rpcClient) } : {}),
     tracker: new TransactionTracker(createStatusReader(rpcClient)),
     ...(process.env.QWAP_QUOTES_ENABLED === 'true' ? { quotes: new VenueQuotes(quoteReader, [qwap]), pools: [qwap], wallets: [qwap] } : {}),
@@ -41,6 +41,6 @@ async function start() {
 }
 void start().catch(() => {
   // Provider exceptions may embed credentials; never print their URLs or causes.
-  console.error('API startup failed. Check PORT, feature flags, QMS_RPC_URL and QMS_CHAIN_ID (supported: 19480).');
+  console.error('API startup failed. Check PORT, CORS_ORIGIN, feature flags, QMS_RPC_URL and QMS_CHAIN_ID (supported: 19480).');
   process.exitCode = 1;
 });
